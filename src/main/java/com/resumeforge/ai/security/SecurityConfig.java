@@ -34,30 +34,18 @@ public class SecurityConfig {
         http
                 .cors(Customizer.withDefaults())
                 .csrf(csrf -> csrf.disable())
-
-                // 🔴 IMPORTANT FIXES
                 .httpBasic(httpBasic -> httpBasic.disable())
                 .formLogin(form -> form.disable())
-
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
-
                 .authorizeHttpRequests(auth -> auth
-
-                        // 🔓 PUBLIC ENDPOINTS
                         .requestMatchers("/", "/health", "/error").permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
-
-                        // CORS preflight
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-
-                        // 🔒 बाकी endpoints
                         .anyRequest().authenticated()
                 )
-
                 .authenticationProvider(authenticationProvider())
-
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
