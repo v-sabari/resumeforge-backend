@@ -106,3 +106,5 @@ CREATE TABLE IF NOT EXISTS export_usage (
     CONSTRAINT fk_export_usage_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_export_usage_user ON export_usage (user_id, created_at DESC);
+
+
