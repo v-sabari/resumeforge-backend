@@ -1,2 +1,0 @@
-package com.cvcraft.ai.dto;
-public record ProjectDto(Long id, String name, String link, String description) {}
