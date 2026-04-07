@@ -7,6 +7,7 @@ public record UserResponse(
         String name,
         String email,
         boolean isPremium,
+        boolean emailVerified,
         Instant createdAt
 ) {
 }

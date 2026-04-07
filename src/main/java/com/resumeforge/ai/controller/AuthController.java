@@ -1,9 +1,6 @@
 package com.resumeforge.ai.controller;
 
-import com.resumeforge.ai.dto.AuthResponse;
-import com.resumeforge.ai.dto.LoginRequest;
-import com.resumeforge.ai.dto.RegisterRequest;
-import com.resumeforge.ai.dto.UserResponse;
+import com.resumeforge.ai.dto.*;
 import com.resumeforge.ai.service.AuthService;
 import com.resumeforge.ai.service.CurrentUserService;
 import jakarta.validation.Valid;
@@ -23,8 +20,18 @@ public class AuthController {
 
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
-    public AuthResponse register(@Valid @RequestBody RegisterRequest request) {
+    public RegisterResponse register(@Valid @RequestBody RegisterRequest request) {
         return authService.register(request);
+    }
+
+    @PostMapping("/verify-email-otp")
+    public MessageResponse verifyEmailOtp(@Valid @RequestBody VerifyOtpRequest request) {
+        return authService.verifyEmailOtp(request);
+    }
+
+    @PostMapping("/resend-email-otp")
+    public MessageResponse resendEmailOtp(@Valid @RequestBody ResendOtpRequest request) {
+        return authService.resendVerificationOtp(request);
     }
 
     @PostMapping("/login")
