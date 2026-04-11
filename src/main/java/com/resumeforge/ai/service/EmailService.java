@@ -44,6 +44,23 @@ public class EmailService {
         sendEmail(toEmail, subject, html, null);
     }
 
+    public void sendPasswordResetOtp(String toEmail, String otpCode) {
+        String subject = "Reset your ResumeForge AI password";
+        String html = """
+            <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111827;">
+              <h2 style="margin-bottom: 8px;">Reset your password</h2>
+              <p>We received a request to reset your <strong>ResumeForge AI</strong> password.</p>
+              <p>Use the OTP below to continue:</p>
+              <div style="font-size: 28px; font-weight: 700; letter-spacing: 6px; margin: 20px 0; color: #2563eb;">
+                %s
+              </div>
+              <p>This OTP expires in <strong>5 minutes</strong>.</p>
+              <p>If you did not request a password reset, you can safely ignore this email.</p>
+            </div>
+            """.formatted(otpCode);
+
+        sendEmail(toEmail, subject, html, null);
+    }
     public void sendContactMessage(String name, String email, String subject, String message) {
         String safeName = name == null ? "" : name.trim();
         String safeEmail = email == null ? "" : email.trim().toLowerCase();

@@ -20,6 +20,7 @@ import java.util.List;
 @Service
 public class AuthService {
     private static final String OTP_PURPOSE_VERIFY_EMAIL = "VERIFY_EMAIL";
+    private static final String OTP_PURPOSE_RESET_PASSWORD = "RESET_PASSWORD";
     private static final int OTP_EXPIRY_SECONDS = 300;
 
     private final UserRepository userRepository;
@@ -187,5 +188,69 @@ public class AuthService {
         SecureRandom random = new SecureRandom();
         int value = 100000 + random.nextInt(900000);
         return String.valueOf(value);
+    }
+
+    public MessageResponse forgotPassword(ForgotPasswordRequest request) {
+        String email = request.email().trim().toLowerCase();
+
+        User user = userRepository.findByEmailIgnoreCase(email).orElse(null);
+
+        if (user == null || !user.isEmailVerified() || !user.isEnabled()) {
+            return new MessageResponse("If an account exists with this email, a password reset OTP has been sent");
+        }
+
+        invalidatePreviousUnusedOtps(email, OTP_PURPOSE_RESET_PASSWORD);
+
+        String otpCode = generateOtp();
+
+        EmailOtp otp = EmailOtp.builder()
+                .email(email)
+                .otpCode(otpCode)
+                .purpose(OTP_PURPOSE_RESET_PASSWORD)
+                .expiresAt(Instant.now().plusSeconds(OTP_EXPIRY_SECONDS))
+                .used(false)
+                .build();
+
+        emailOtpRepository.save(otp);
+        emailService.sendPasswordResetOtp(email, otpCode);
+
+        return new MessageResponse("If an account exists with this email, a password reset OTP has been sent");
+    }
+
+    public MessageResponse resetPassword(ResetPasswordRequest request) {
+        String email = request.email().trim().toLowerCase();
+
+        if (!request.newPassword().equals(request.confirmPassword())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Passwords do not match");
+        }
+
+        EmailOtp otp = emailOtpRepository
+                .findTopByEmailIgnoreCaseAndPurposeOrderByCreatedAtDesc(email, OTP_PURPOSE_RESET_PASSWORD)
+                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "OTP not found"));
+
+        if (otp.isUsed()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "OTP already used");
+        }
+
+        if (otp.getExpiresAt().isBefore(Instant.now())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "OTP expired");
+        }
+
+        if (!otp.getOtpCode().equals(request.otp().trim())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid OTP");
+        }
+
+        User user = userRepository.findByEmailIgnoreCase(email)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "User not found"));
+
+        otp.setUsed(true);
+        emailOtpRepository.save(otp);
+
+        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        userRepository.save(user);
+
+        invalidatePreviousUnusedOtps(email, OTP_PURPOSE_RESET_PASSWORD);
+
+        return new MessageResponse("Password reset successfully");
     }
 }
