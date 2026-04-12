@@ -1,137 +1,180 @@
 package com.resumeforge.ai.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.resumeforge.ai.dto.*;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.client.WebClient;
 
-import java.util.*;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import java.util.List;
+import java.util.Map;
 
 @Service
 public class AiService {
 
+    private final WebClient webClient;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @Value("${app.openrouter.api-key}")
+    private String apiKey;
+
+    @Value("${app.openrouter.base-url}")
+    private String baseUrl;
+
+    @Value("${app.openrouter.model}")
+    private String model;
+
+    @Value("${app.openrouter.site-url}")
+    private String siteUrl;
+
+    @Value("${app.openrouter.site-name}")
+    private String siteName;
+
+    public AiService(WebClient.Builder builder) {
+        this.webClient = builder.build();
+    }
+
     public AiTextResponse generateSummary(AiSummaryRequest request) {
-        String role = safe(request.targetRole(), "professional");
-        LinkedHashSet<String> keywords = new LinkedHashSet<>();
-        collect(keywords, request.skills());
-        collect(keywords, request.achievements());
-        collect(keywords, request.highlights());
+        String prompt = """
+            Write a professional ATS-optimized resume summary.
 
-        String topKeywords = keywords.stream().limit(4).collect(Collectors.joining(", "));
-        String base = request.currentSummary();
+            Target Role: %s
+            Skills: %s
+            Achievements: %s
 
-        String summary = Stream.of(
-                        base,
-                        "Results-driven " + role + " with experience delivering measurable outcomes, cross-functional collaboration, and execution in fast-paced environments.",
-                        topKeywords.isBlank() ? "" : "Brings hands-on strength in " + topKeywords + " while keeping work aligned to ATS-friendly language and business impact.",
-                        "Known for improving efficiency, communicating clearly, and building concise one-page resumes that highlight value quickly."
-                )
-                .filter(Objects::nonNull)
-                .map(String::trim)
-                .filter(s -> !s.isBlank())
-                .collect(Collectors.joining(" "));
+            Requirements:
+            - 2 to 4 sentences
+            - Professional tone
+            - ATS-friendly
+            - Concise and impactful
+            """.formatted(
+                request.targetRole(),
+                request.skills(),
+                request.achievements()
+        );
 
-        return new AiTextResponse(trimWords(summary, 55));
+        return new AiTextResponse(callAi(prompt));
     }
 
     public AiListResponse generateBullets(AiBulletsRequest request) {
-        String role = safe(request.role(), "professional");
-        String company = safe(request.company(), "the organization");
-        List<String> responsibilities = normalize(request.responsibilities());
-        List<String> technologies = normalize(request.technologies());
-        String current = safe(request.currentText(), "");
+        String prompt = """
+            Generate 5 ATS-optimized resume bullet points.
 
-        LinkedHashSet<String> bullets = new LinkedHashSet<>();
-        if (!responsibilities.isEmpty()) {
-            for (String responsibility : responsibilities.stream().limit(4).toList()) {
-                bullets.add(trimWords(capitalize("Led " + responsibility + " for " + company + ", improving execution quality and stakeholder visibility through clear delivery ownership."), 24));
-            }
-        }
-        if (!technologies.isEmpty()) {
-            bullets.add(trimWords("Used " + String.join(", ", technologies.stream().limit(4).toList()) + " to streamline workflows, reduce manual effort, and support scalable " + role.toLowerCase() + " execution.", 24));
-        }
-        if (!current.isBlank()) {
-            bullets.add(trimWords("Refined existing work into concise, metrics-ready resume language that emphasizes outcomes, collaboration, and operational impact.", 22));
-        }
-        bullets.add(trimWords("Partnered with cross-functional teams to prioritize deliverables, solve problems quickly, and maintain consistent execution against deadlines.", 22));
-        bullets.add(trimWords("Delivered improvements that strengthened process reliability, user experience, and measurable business performance.", 18));
+            Role: %s
+            Company: %s
+            Responsibilities: %s
+            Technologies: %s
 
-        return new AiListResponse(bullets.stream().limit(5).toList());
+            Requirements:
+            - Strong action verbs
+            - Quantified/impact-oriented where possible
+            - Return each bullet on new line
+            """.formatted(
+                request.role(),
+                request.company(),
+                request.responsibilities(),
+                request.technologies()
+        );
+
+        String response = callAi(prompt);
+
+        List<String> bullets = response.lines()
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .toList();
+
+        return new AiListResponse(bullets);
     }
 
     public AiListResponse suggestSkills(AiSkillsRequest request) {
-        LinkedHashSet<String> skills = new LinkedHashSet<>();
-        collect(skills, request.currentSkills());
-        collect(skills, request.experienceKeywords());
-        collect(skills, request.projectKeywords());
+        String prompt = """
+            Suggest 12 ATS-friendly resume skills for this role.
 
-        String role = safe(request.targetRole(), "").toLowerCase(Locale.ROOT);
-        if (role.contains("frontend") || role.contains("react")) {
-            skills.addAll(List.of("React", "TypeScript", "REST APIs", "Responsive Design", "Performance Optimization"));
-        } else if (role.contains("backend") || role.contains("spring")) {
-            skills.addAll(List.of("Spring Boot", "REST APIs", "MySQL", "JWT Authentication", "System Design"));
-        } else if (role.contains("product")) {
-            skills.addAll(List.of("Roadmapping", "Stakeholder Management", "Experimentation", "Product Analytics", "User Research"));
-        } else {
-            skills.addAll(List.of("Communication", "Problem Solving", "Project Execution", "Process Improvement", "Cross-functional Collaboration"));
-        }
+            Target Role: %s
+            Existing Skills: %s
+            Experience Keywords: %s
+            Project Keywords: %s
 
-        return new AiListResponse(skills.stream().map(this::normalizeSkill).distinct().limit(12).toList());
+            Return only comma-separated skills.
+            """.formatted(
+                request.targetRole(),
+                request.currentSkills(),
+                request.experienceKeywords(),
+                request.projectKeywords()
+        );
+
+        String response = callAi(prompt);
+
+        List<String> skills = List.of(response.split(","))
+                .stream()
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .distinct()
+                .limit(12)
+                .toList();
+
+        return new AiListResponse(skills);
     }
 
     public AiTextResponse rewrite(AiRewriteRequest request) {
-        String tone = safe(request.tone(), "professional");
-        String role = safe(request.targetRole(), "candidate");
-        String text = safe(request.text(), "").replaceAll("\\s+", " ").trim();
-        if (text.isBlank()) {
-            text = "Delivered meaningful results through reliable execution, collaboration, and attention to quality.";
+        String prompt = """
+            Rewrite this resume text professionally.
+
+            Target Role: %s
+            Tone: %s
+            Text: %s
+
+            Requirements:
+            - Improve clarity
+            - Improve professionalism
+            - ATS-friendly
+            - Preserve meaning
+            """.formatted(
+                request.targetRole(),
+                request.tone(),
+                request.text()
+        );
+
+        return new AiTextResponse(callAi(prompt));
+    }
+
+    private String callAi(String prompt) {
+        try {
+            Map<String, Object> body = Map.of(
+                    "model", model,
+                    "messages", List.of(
+                            Map.of(
+                                    "role", "user",
+                                    "content", prompt
+                            )
+                    )
+            );
+
+            String response = webClient.post()
+                    .uri(baseUrl)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
+                    .header("HTTP-Referer", siteUrl)
+                    .header("X-Title", siteName)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(body)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+
+            JsonNode root = objectMapper.readTree(response);
+
+            return root.path("choices")
+                    .get(0)
+                    .path("message")
+                    .path("content")
+                    .asText()
+                    .trim();
+
+        } catch (Exception e) {
+            throw new RuntimeException("AI generation failed", e);
         }
-
-        String prefix = switch (tone.toLowerCase(Locale.ROOT)) {
-            case "concise" -> "Concise rewrite for " + role + ": ";
-            case "impactful" -> "Impact-focused rewrite for " + role + ": ";
-            default -> "Professional rewrite for " + role + ": ";
-        };
-
-        String rewritten = prefix + capitalize(text)
-                .replace("worked on", "delivered")
-                .replace("helped", "supported")
-                .replace("did", "executed")
-                .replace("made", "developed");
-
-        return new AiTextResponse(trimWords(rewritten, 45));
-    }
-
-    private void collect(Set<String> target, List<String> values) {
-        if (values == null) return;
-        values.stream().filter(Objects::nonNull).map(String::trim).filter(v -> !v.isBlank()).forEach(target::add);
-    }
-
-    private String safe(String value, String fallback) {
-        return value == null || value.isBlank() ? fallback : value.trim();
-    }
-
-    private List<String> normalize(List<String> values) {
-        if (values == null) return Collections.emptyList();
-        return values.stream().filter(Objects::nonNull).map(String::trim).filter(v -> !v.isBlank()).toList();
-    }
-
-    private String trimWords(String text, int maxWords) {
-        String[] parts = text.trim().split("\\s+");
-        if (parts.length <= maxWords) {
-            return text.trim();
-        }
-        return String.join(" ", Arrays.copyOfRange(parts, 0, maxWords)).trim() + "…";
-    }
-
-    private String capitalize(String value) {
-        if (value == null || value.isBlank()) return "";
-        return Character.toUpperCase(value.charAt(0)) + value.substring(1);
-    }
-
-    private String normalizeSkill(String skill) {
-        return Arrays.stream(skill.split("\\s+"))
-                .map(word -> word.isBlank() ? word : Character.toUpperCase(word.charAt(0)) + word.substring(1).toLowerCase(Locale.ROOT))
-                .collect(Collectors.joining(" "));
     }
 }
