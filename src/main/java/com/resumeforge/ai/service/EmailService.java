@@ -43,7 +43,9 @@ public class EmailService {
 
         sendEmail(toEmail, subject, html, null);
     }
+    public void sendInvoiceEmail(String to,String customername,String subject,byte[] pdfBytes){
 
+    }
     public void sendPasswordResetOtp(String toEmail, String otpCode) {
         String subject = "Reset your ResumeForge AI password";
         String html = """

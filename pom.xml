@@ -74,6 +74,22 @@
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
         </dependency>
+        <!-- ─────────────────────────────────────────────────────────────────
+     ADD THESE DEPENDENCIES to your existing pom.xml <dependencies> block.
+     ───────────────────────────────────────────────────────────────── -->
+
+        <!-- Flyway: managed database migrations (replaces ddl-auto=update) -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+            <!-- Version managed by spring-boot-starter-parent -->
+        </dependency>
+
+        <!-- Flyway PostgreSQL support (required since Flyway 10+) -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>com.github.librepdf</groupId>

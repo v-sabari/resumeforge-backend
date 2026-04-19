@@ -8,6 +8,9 @@ public record UserResponse(
         String email,
         boolean isPremium,
         boolean emailVerified,
-        Instant createdAt
-) {
-}
+        Instant createdAt,
+        /** "USER" or "ADMIN" — used by frontend to show/hide admin nav link. */
+        String role,
+        /** The user's own referral code — displayed in the referral hub. */
+        String referralCode
+) {}

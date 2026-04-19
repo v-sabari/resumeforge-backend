@@ -19,29 +19,36 @@ import java.util.List;
 
 @Service
 public class AuthService {
-    private static final String OTP_PURPOSE_VERIFY_EMAIL = "VERIFY_EMAIL";
-    private static final String OTP_PURPOSE_RESET_PASSWORD = "RESET_PASSWORD";
-    private static final int OTP_EXPIRY_SECONDS = 300;
 
-    private final UserRepository userRepository;
-    private final EmailOtpRepository emailOtpRepository;
-    private final PasswordEncoder passwordEncoder;
-    private final JwtService jwtService;
+    private static final String OTP_PURPOSE_VERIFY_EMAIL   = "VERIFY_EMAIL";
+    private static final String OTP_PURPOSE_RESET_PASSWORD = "RESET_PASSWORD";
+    private static final int    OTP_EXPIRY_SECONDS         = 300;
+
+    private final UserRepository       userRepository;
+    private final EmailOtpRepository   emailOtpRepository;
+    private final PasswordEncoder      passwordEncoder;
+    private final JwtService           jwtService;
     private final AuthenticationManager authenticationManager;
-    private final EmailService emailService;
+    private final EmailService         emailService;
+    private final ReferralService      referralService;
+    private final OtpAttemptService    otpAttemptService;
 
     public AuthService(UserRepository userRepository,
                        EmailOtpRepository emailOtpRepository,
                        PasswordEncoder passwordEncoder,
                        JwtService jwtService,
                        AuthenticationManager authenticationManager,
-                       EmailService emailService) {
-        this.userRepository = userRepository;
-        this.emailOtpRepository = emailOtpRepository;
-        this.passwordEncoder = passwordEncoder;
-        this.jwtService = jwtService;
+                       EmailService emailService,
+                       ReferralService referralService,
+                       OtpAttemptService otpAttemptService) {
+        this.userRepository        = userRepository;
+        this.emailOtpRepository    = emailOtpRepository;
+        this.passwordEncoder       = passwordEncoder;
+        this.jwtService            = jwtService;
         this.authenticationManager = authenticationManager;
-        this.emailService = emailService;
+        this.emailService          = emailService;
+        this.referralService       = referralService;
+        this.otpAttemptService     = otpAttemptService;
     }
 
     public RegisterResponse register(RegisterRequest request) {
@@ -51,6 +58,8 @@ public class AuthService {
             throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists");
         }
 
+        String referralCode = referralService.generateUniqueReferralCode();
+
         User user = User.builder()
                 .name(request.name().trim())
                 .email(email)
@@ -58,33 +67,31 @@ public class AuthService {
                 .premium(false)
                 .emailVerified(false)
                 .enabled(false)
+                .referralCode(referralCode)
                 .build();
 
         userRepository.save(user);
 
-        invalidatePreviousUnusedOtps(email, OTP_PURPOSE_VERIFY_EMAIL);
+        if (request.referralCode() != null && !request.referralCode().isBlank()) {
+            referralService.recordReferralAtRegistration(user, request.referralCode().trim());
+        }
 
-        String otpCode = generateOtp();
+        issueOtp(email, OTP_PURPOSE_VERIFY_EMAIL);
+        emailService.sendVerificationOtp(email, getLatestOtp(email, OTP_PURPOSE_VERIFY_EMAIL));
 
-        EmailOtp otp = EmailOtp.builder()
-                .email(email)
-                .otpCode(otpCode)
-                .purpose(OTP_PURPOSE_VERIFY_EMAIL)
-                .expiresAt(Instant.now().plusSeconds(OTP_EXPIRY_SECONDS))
-                .used(false)
-                .build();
-
-        emailOtpRepository.save(otp);
-        emailService.sendVerificationOtp(email, otpCode);
-
-        return new RegisterResponse(
-                "Verification OTP sent to your email address",
-                email
-        );
+        return new RegisterResponse("Verification OTP sent to your email address", email);
     }
 
     public MessageResponse verifyEmailOtp(VerifyOtpRequest request) {
         String email = request.email().trim().toLowerCase();
+
+        // ── OTP brute-force protection ──────────────────────────────────
+        if (otpAttemptService.isLockedOut(email)) {
+            long remaining = otpAttemptService.lockoutSecondsRemaining(email);
+            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS,
+                    "Too many incorrect attempts. Please wait " + (remaining / 60 + 1) +
+                    " minute(s) before trying again.");
+        }
 
         EmailOtp otp = emailOtpRepository
                 .findTopByEmailIgnoreCaseAndPurposeOrderByCreatedAtDesc(email, OTP_PURPOSE_VERIFY_EMAIL)
@@ -93,14 +100,17 @@ public class AuthService {
         if (otp.isUsed()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "OTP already used");
         }
-
         if (otp.getExpiresAt().isBefore(Instant.now())) {
+            otpAttemptService.recordFailure(email);
             throw new ApiException(HttpStatus.BAD_REQUEST, "OTP expired");
         }
-
         if (!otp.getOtpCode().equals(request.otp().trim())) {
+            otpAttemptService.recordFailure(email);
             throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid OTP");
         }
+
+        // Correct OTP — clear lockout counter
+        otpAttemptService.clearAttempts(email);
 
         otp.setUsed(true);
         emailOtpRepository.save(otp);
@@ -112,6 +122,8 @@ public class AuthService {
         user.setEnabled(true);
         userRepository.save(user);
 
+        try { referralService.checkAndQualifyReferral(user); } catch (Exception ignored) {}
+
         return new MessageResponse("Email verified successfully");
     }
 
@@ -121,23 +133,15 @@ public class AuthService {
         User user = userRepository.findByEmailIgnoreCase(email)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "No account found for this email"));
 
-        if (user.isEmailVerified()) {
+        if (user.isEmailVerified())
             throw new ApiException(HttpStatus.BAD_REQUEST, "Email is already verified");
-        }
+
+        // Clear lockout counter when user requests a fresh OTP
+        otpAttemptService.clearAttempts(email);
 
         invalidatePreviousUnusedOtps(email, OTP_PURPOSE_VERIFY_EMAIL);
-
         String otpCode = generateOtp();
-
-        EmailOtp otp = EmailOtp.builder()
-                .email(email)
-                .otpCode(otpCode)
-                .purpose(OTP_PURPOSE_VERIFY_EMAIL)
-                .expiresAt(Instant.now().plusSeconds(OTP_EXPIRY_SECONDS))
-                .used(false)
-                .build();
-
-        emailOtpRepository.save(otp);
+        saveOtp(email, otpCode, OTP_PURPOSE_VERIFY_EMAIL);
         emailService.sendVerificationOtp(email, otpCode);
 
         return new MessageResponse("A new OTP has been sent to your email");
@@ -149,16 +153,14 @@ public class AuthService {
         User user = userRepository.findByEmailIgnoreCase(email)
                 .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "Invalid credentials"));
 
-        if (!user.isEmailVerified() || !user.isEnabled()) {
-            throw new ApiException(HttpStatus.UNAUTHORIZED, "Please verify your email before logging in");
-        }
+        if (!user.isEmailVerified() || !user.isEnabled())
+            throw new ApiException(HttpStatus.UNAUTHORIZED,
+                    "Please verify your email before logging in");
 
         authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(email, request.password())
-        );
+                new UsernamePasswordAuthenticationToken(email, request.password()));
 
-        String token = jwtService.generateToken(user.getEmail());
-        return new AuthResponse(token, toUserResponse(user));
+        return new AuthResponse(jwtService.generateToken(user.getEmail()), toUserResponse(user));
     }
 
     public UserResponse getMe(User user) {
@@ -167,90 +169,101 @@ public class AuthService {
 
     public UserResponse toUserResponse(User user) {
         return new UserResponse(
-                user.getId(),
-                user.getName(),
-                user.getEmail(),
-                user.isPremium(),
-                user.isEmailVerified(),
-                user.getCreatedAt()
+                user.getId(), user.getName(), user.getEmail(),
+                user.isPremium(), user.isEmailVerified(), user.getCreatedAt(),
+                user.getRole() != null ? user.getRole() : "USER",
+                user.getReferralCode()
         );
-    }
-
-    private void invalidatePreviousUnusedOtps(String email, String purpose) {
-        List<EmailOtp> oldOtps = emailOtpRepository.findByEmailIgnoreCaseAndPurposeAndUsedFalse(email, purpose);
-        for (EmailOtp oldOtp : oldOtps) {
-            oldOtp.setUsed(true);
-        }
-        emailOtpRepository.saveAll(oldOtps);
-    }
-
-    private String generateOtp() {
-        SecureRandom random = new SecureRandom();
-        int value = 100000 + random.nextInt(900000);
-        return String.valueOf(value);
     }
 
     public MessageResponse forgotPassword(ForgotPasswordRequest request) {
         String email = request.email().trim().toLowerCase();
-
         User user = userRepository.findByEmailIgnoreCase(email).orElse(null);
 
         if (user == null || !user.isEmailVerified() || !user.isEnabled()) {
-            return new MessageResponse("If an account exists with this email, a password reset OTP has been sent");
+            // Always return the same message to prevent email enumeration
+            return new MessageResponse(
+                    "If an account exists with this email, a password reset OTP has been sent");
         }
 
         invalidatePreviousUnusedOtps(email, OTP_PURPOSE_RESET_PASSWORD);
-
         String otpCode = generateOtp();
-
-        EmailOtp otp = EmailOtp.builder()
-                .email(email)
-                .otpCode(otpCode)
-                .purpose(OTP_PURPOSE_RESET_PASSWORD)
-                .expiresAt(Instant.now().plusSeconds(OTP_EXPIRY_SECONDS))
-                .used(false)
-                .build();
-
-        emailOtpRepository.save(otp);
+        saveOtp(email, otpCode, OTP_PURPOSE_RESET_PASSWORD);
         emailService.sendPasswordResetOtp(email, otpCode);
 
-        return new MessageResponse("If an account exists with this email, a password reset OTP has been sent");
+        return new MessageResponse(
+                "If an account exists with this email, a password reset OTP has been sent");
     }
 
     public MessageResponse resetPassword(ResetPasswordRequest request) {
         String email = request.email().trim().toLowerCase();
 
-        if (!request.newPassword().equals(request.confirmPassword())) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Passwords do not match");
+        // ── OTP brute-force protection ──────────────────────────────────
+        if (otpAttemptService.isLockedOut(email)) {
+            long remaining = otpAttemptService.lockoutSecondsRemaining(email);
+            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS,
+                    "Too many incorrect attempts. Please wait " + (remaining / 60 + 1) +
+                    " minute(s) before trying again.");
         }
+
+        if (!request.newPassword().equals(request.confirmPassword()))
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Passwords do not match");
 
         EmailOtp otp = emailOtpRepository
                 .findTopByEmailIgnoreCaseAndPurposeOrderByCreatedAtDesc(email, OTP_PURPOSE_RESET_PASSWORD)
                 .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "OTP not found"));
 
-        if (otp.isUsed()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "OTP already used");
-        }
-
+        if (otp.isUsed()) throw new ApiException(HttpStatus.BAD_REQUEST, "OTP already used");
         if (otp.getExpiresAt().isBefore(Instant.now())) {
+            otpAttemptService.recordFailure(email);
             throw new ApiException(HttpStatus.BAD_REQUEST, "OTP expired");
         }
-
         if (!otp.getOtpCode().equals(request.otp().trim())) {
+            otpAttemptService.recordFailure(email);
             throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid OTP");
         }
+
+        otpAttemptService.clearAttempts(email);
 
         User user = userRepository.findByEmailIgnoreCase(email)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "User not found"));
 
         otp.setUsed(true);
         emailOtpRepository.save(otp);
-
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
         userRepository.save(user);
-
         invalidatePreviousUnusedOtps(email, OTP_PURPOSE_RESET_PASSWORD);
 
         return new MessageResponse("Password reset successfully");
+    }
+
+    // ── Internal helpers ─────────────────────────────────────────────────
+
+    private void issueOtp(String email, String purpose) {
+        invalidatePreviousUnusedOtps(email, purpose);
+        saveOtp(email, generateOtp(), purpose);
+    }
+
+    private void saveOtp(String email, String code, String purpose) {
+        emailOtpRepository.save(EmailOtp.builder()
+                .email(email).otpCode(code).purpose(purpose)
+                .expiresAt(Instant.now().plusSeconds(OTP_EXPIRY_SECONDS)).used(false).build());
+    }
+
+    private String getLatestOtp(String email, String purpose) {
+        return emailOtpRepository
+                .findTopByEmailIgnoreCaseAndPurposeOrderByCreatedAtDesc(email, purpose)
+                .map(EmailOtp::getOtpCode).orElse("");
+    }
+
+    private void invalidatePreviousUnusedOtps(String email, String purpose) {
+        List<EmailOtp> old = emailOtpRepository
+                .findByEmailIgnoreCaseAndPurposeAndUsedFalse(email, purpose);
+        old.forEach(o -> o.setUsed(true));
+        emailOtpRepository.saveAll(old);
+    }
+
+    private String generateOtp() {
+        return String.valueOf(100000 + new SecureRandom().nextInt(900000));
     }
 }

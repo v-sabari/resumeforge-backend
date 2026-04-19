@@ -1,14 +1,7 @@
 package com.resumeforge.ai.service;
 
-import com.resumeforge.ai.dto.EducationDto;
-import com.resumeforge.ai.dto.ExperienceDto;
-import com.resumeforge.ai.dto.ProjectDto;
-import com.resumeforge.ai.dto.ResumeDto;
-import com.resumeforge.ai.entity.Education;
-import com.resumeforge.ai.entity.Experience;
-import com.resumeforge.ai.entity.Project;
-import com.resumeforge.ai.entity.Resume;
-import com.resumeforge.ai.entity.User;
+import com.resumeforge.ai.dto.*;
+import com.resumeforge.ai.entity.*;
 import com.resumeforge.ai.exception.ResourceNotFoundException;
 import com.resumeforge.ai.repository.ResumeRepository;
 import com.resumeforge.ai.util.JsonUtil;
@@ -22,18 +15,20 @@ import java.util.List;
 public class ResumeService {
     private final ResumeRepository resumeRepository;
     private final JsonUtil jsonUtil;
+    private final ReferralService referralService;
 
-    public ResumeService(ResumeRepository resumeRepository, JsonUtil jsonUtil) {
+    public ResumeService(ResumeRepository resumeRepository,
+                         JsonUtil jsonUtil,
+                         ReferralService referralService) {
         this.resumeRepository = resumeRepository;
-        this.jsonUtil = jsonUtil;
+        this.jsonUtil         = jsonUtil;
+        this.referralService  = referralService;
     }
 
     @Transactional(readOnly = true)
     public List<ResumeDto> getAll(User user) {
         return resumeRepository.findByUserOrderByUpdatedAtDesc(user)
-                .stream()
-                .map(this::toDto)
-                .toList();
+                .stream().map(this::toDto).toList();
     }
 
     @Transactional(readOnly = true)
@@ -45,10 +40,25 @@ public class ResumeService {
 
     @Transactional
     public ResumeDto create(User user, ResumeDto dto) {
+        boolean isFirstResume = resumeRepository.countByUser(user) == 0;
+
         Resume resume = new Resume();
         resume.setUser(user);
         apply(resume, dto);
-        return toDto(resumeRepository.save(resume));
+        ResumeDto saved = toDto(resumeRepository.save(resume));
+
+        // ── Referral qualification hook ───────────────────────────────
+        // Fires only on first resume creation. Silently swallowed if it
+        // fails so it never breaks the resume creation response.
+        if (isFirstResume) {
+            try {
+                referralService.checkAndQualifyReferral(user);
+            } catch (Exception e) {
+                // Log but don't fail the resume create operation
+            }
+        }
+
+        return saved;
     }
 
     @Transactional
@@ -82,104 +92,56 @@ public class ResumeService {
 
         resume.getExperiences().clear();
         if (dto.experiences() != null) {
-            for (ExperienceDto experienceDto : dto.experiences()) {
-                Experience exp = Experience.builder()
-                        .resume(resume)
-                        .company(experienceDto.company())
-                        .role(experienceDto.role())
-                        .location(experienceDto.location())
-                        .startDate(experienceDto.startDate())
-                        .endDate(experienceDto.endDate())
-                        .bulletsJson(jsonUtil.toJson(experienceDto.bullets()))
-                        .build();
-                resume.getExperiences().add(exp);
+            for (ExperienceDto ed : dto.experiences()) {
+                resume.getExperiences().add(Experience.builder()
+                        .resume(resume).company(ed.company()).role(ed.role())
+                        .location(ed.location()).startDate(ed.startDate()).endDate(ed.endDate())
+                        .bulletsJson(jsonUtil.toJson(ed.bullets())).build());
             }
         }
 
         resume.getEducationEntries().clear();
         if (dto.education() != null) {
-            for (EducationDto educationDto : dto.education()) {
-                Education education = Education.builder()
-                        .resume(resume)
-                        .institution(educationDto.institution())
-                        .degree(educationDto.degree())
-                        .field(educationDto.field())
-                        .startDate(educationDto.startDate())
-                        .endDate(educationDto.endDate())
-                        .build();
-                resume.getEducationEntries().add(education);
+            for (EducationDto ed : dto.education()) {
+                resume.getEducationEntries().add(Education.builder()
+                        .resume(resume).institution(ed.institution()).degree(ed.degree())
+                        .field(ed.field()).startDate(ed.startDate()).endDate(ed.endDate()).build());
             }
         }
 
         resume.getProjects().clear();
         if (dto.projects() != null) {
-            for (ProjectDto projectDto : dto.projects()) {
-                Project project = Project.builder()
-                        .resume(resume)
-                        .name(projectDto.name())
-                        .link(projectDto.link())
-                        .description(projectDto.description())
-                        .build();
-                resume.getProjects().add(project);
+            for (ProjectDto pd : dto.projects()) {
+                resume.getProjects().add(Project.builder()
+                        .resume(resume).name(pd.name()).link(pd.link())
+                        .description(pd.description()).build());
             }
         }
     }
 
     private ResumeDto toDto(Resume resume) {
         List<ExperienceDto> experiences = new ArrayList<>();
-        for (Experience experience : resume.getExperiences()) {
-            experiences.add(new ExperienceDto(
-                    experience.getId(),
-                    experience.getCompany(),
-                    experience.getRole(),
-                    experience.getLocation(),
-                    experience.getStartDate(),
-                    experience.getEndDate(),
-                    jsonUtil.toStringList(experience.getBulletsJson())
-            ));
+        for (Experience e : resume.getExperiences()) {
+            experiences.add(new ExperienceDto(e.getId(), e.getCompany(), e.getRole(),
+                    e.getLocation(), e.getStartDate(), e.getEndDate(),
+                    jsonUtil.toStringList(e.getBulletsJson())));
         }
-
         List<EducationDto> education = new ArrayList<>();
-        for (Education entry : resume.getEducationEntries()) {
-            education.add(new EducationDto(
-                    entry.getId(),
-                    entry.getInstitution(),
-                    entry.getDegree(),
-                    entry.getField(),
-                    entry.getStartDate(),
-                    entry.getEndDate()
-            ));
+        for (Education e : resume.getEducationEntries()) {
+            education.add(new EducationDto(e.getId(), e.getInstitution(), e.getDegree(),
+                    e.getField(), e.getStartDate(), e.getEndDate()));
         }
-
         List<ProjectDto> projects = new ArrayList<>();
-        for (Project project : resume.getProjects()) {
-            projects.add(new ProjectDto(
-                    project.getId(),
-                    project.getName(),
-                    project.getLink(),
-                    project.getDescription()
-            ));
+        for (Project p : resume.getProjects()) {
+            projects.add(new ProjectDto(p.getId(), p.getName(), p.getLink(), p.getDescription()));
         }
-
-        return new ResumeDto(
-                resume.getId(),
-                resume.getFullName(),
-                resume.getRole(),
-                resume.getEmail(),
-                resume.getPhone(),
-                resume.getLocation(),
-                resume.getLinkedin(),
-                resume.getGithub(),
-                resume.getPortfolio(),
-                resume.getSummary(),
-                jsonUtil.toStringList(resume.getSkillsJson()),
-                experiences,
-                education,
-                projects,
+        return new ResumeDto(resume.getId(), resume.getFullName(), resume.getRole(),
+                resume.getEmail(), resume.getPhone(), resume.getLocation(),
+                resume.getLinkedin(), resume.getGithub(), resume.getPortfolio(),
+                resume.getSummary(), jsonUtil.toStringList(resume.getSkillsJson()),
+                experiences, education, projects,
                 jsonUtil.toStringList(resume.getCertificationsJson()),
                 jsonUtil.toStringList(resume.getAchievementsJson()),
-                resume.getCreatedAt(),
-                resume.getUpdatedAt()
-        );
+                resume.getCreatedAt(), resume.getUpdatedAt());
     }
 }
