@@ -1,3 +1,4 @@
+-- AI USAGE LOG TABLE
 CREATE TABLE IF NOT EXISTS ai_usage_log (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL,
@@ -6,4 +7,13 @@ CREATE TABLE IF NOT EXISTS ai_usage_log (
     output_tokens INTEGER,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_ai_usage_user FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+-- CONTACT MESSAGES TABLE
+CREATE TABLE IF NOT EXISTS contact_messages (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    email VARCHAR(150) NOT NULL,
+    message TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
