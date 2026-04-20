@@ -1,18 +1,15 @@
 package com.resumeforge.ai.repository;
 
 import com.resumeforge.ai.entity.Resume;
-import com.resumeforge.ai.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
 
+@Repository
 public interface ResumeRepository extends JpaRepository<Resume, Long> {
-
-    List<Resume> findByUserOrderByUpdatedAtDesc(User user);
-
-    Optional<Resume> findByIdAndUser(Long id, User user);
-
-    /** Used by ResumeService.create() to detect whether this is the user's first resume. */
-    long countByUser(User user);
+    List<Resume> findByUserIdOrderByUpdatedAtDesc(Long userId);
+    Optional<Resume> findByIdAndUserId(Long id, Long userId);
+    long countByUserId(Long userId);
 }

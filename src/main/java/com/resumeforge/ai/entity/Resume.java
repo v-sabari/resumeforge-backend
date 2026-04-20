@@ -2,94 +2,74 @@ package com.resumeforge.ai.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "resumes")
+@EntityListeners(AuditingEntityListener.class)
 @Getter
 @Setter
-@Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@Builder
 public class Resume {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
-    private User user;
+    @Column(name = "user_id", nullable = false)
+    private Long userId;
 
-    @Column(name = "full_name", length = 180)
-    private String fullName;
+    @Column(nullable = false, length = 500)
+    private String title;
 
-    @Column(name = "role", length = 180)
-    private String role;
+    @Column(nullable = false, length = 100)
+    @Builder.Default
+    private String template = "modern";
 
-    @Column(length = 180)
-    private String email;
-
-    @Column(length = 60)
-    private String phone;
-
-    @Column(length = 180)
-    private String location;
-
-    @Column(length = 255)
-    private String linkedin;
-
-    @Column(length = 255)
-    private String github;
-
-    @Column(length = 255)
-    private String portfolio;
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "personal_info", columnDefinition = "jsonb")
+    private String personalInfo;
 
     @Column(columnDefinition = "TEXT")
     private String summary;
 
-    @Column(name = "skills_json", columnDefinition = "TEXT")
-    private String skillsJson;
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private String experience;
 
-    @Column(name = "certifications_json", columnDefinition = "TEXT")
-    private String certificationsJson;
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private String education;
 
-    @Column(name = "achievements_json", columnDefinition = "TEXT")
-    private String achievementsJson;
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private String skills;
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private String projects;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private String certifications;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "custom_sections", columnDefinition = "jsonb")
+    private String customSections;
+
+    @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
-    @Builder.Default
-    private Instant createdAt = Instant.now();
+    private LocalDateTime createdAt;
 
-    @Column(name = "updated_at", nullable = false)
-    @Builder.Default
-    private Instant updatedAt = Instant.now();
-
-    @OneToMany(mappedBy = "resume", cascade = CascadeType.ALL, orphanRemoval = true)
-    @OrderBy("id ASC")
-    @Builder.Default
-    private List<Experience> experiences = new ArrayList<>();
-
-    @OneToMany(mappedBy = "resume", cascade = CascadeType.ALL, orphanRemoval = true)
-    @OrderBy("id ASC")
-    @Builder.Default
-    private List<Education> educationEntries = new ArrayList<>();
-
-    @OneToMany(mappedBy = "resume", cascade = CascadeType.ALL, orphanRemoval = true)
-    @OrderBy("id ASC")
-    @Builder.Default
-    private List<Project> projects = new ArrayList<>();
-
-    @PrePersist
-    public void prePersist() {
-        createdAt = Instant.now();
-        updatedAt = createdAt;
-    }
-
-    @PreUpdate
-    public void preUpdate() {
-        updatedAt = Instant.now();
-    }
+    @LastModifiedDate
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
 }

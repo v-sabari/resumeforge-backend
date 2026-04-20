@@ -1,29 +1,32 @@
 package com.resumeforge.ai.controller;
 
+import com.resumeforge.ai.dto.ApiResponse;
 import com.resumeforge.ai.dto.PremiumActivateRequest;
 import com.resumeforge.ai.dto.PremiumStatusResponse;
-import com.resumeforge.ai.service.CurrentUserService;
-import com.resumeforge.ai.service.PremiumService;
+import com.resumeforge.ai.entity.User;
+import com.resumeforge.ai.service.PaymentService;
+import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/premium")
 public class PremiumController {
-    private final PremiumService premiumService;
-    private final CurrentUserService currentUserService;
 
-    public PremiumController(PremiumService premiumService, CurrentUserService currentUserService) {
-        this.premiumService = premiumService;
-        this.currentUserService = currentUserService;
-    }
+    @Autowired
+    private PaymentService paymentService;
 
     @GetMapping("/status")
-    public PremiumStatusResponse status() {
-        return premiumService.status(currentUserService.getCurrentUser());
+    public ResponseEntity<PremiumStatusResponse> getStatus(@AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(paymentService.getPremiumStatus(user));
     }
 
     @PostMapping("/activate")
-    public PremiumStatusResponse activate(@RequestBody PremiumActivateRequest request) {
-        return premiumService.activate(currentUserService.getCurrentUser(), request);
+    public ResponseEntity<ApiResponse> activate(
+            @AuthenticationPrincipal User user,
+            @Valid @RequestBody PremiumActivateRequest request) {
+        return ResponseEntity.ok(paymentService.activatePremium(user, request));
     }
 }

@@ -2,81 +2,70 @@ package com.resumeforge.ai.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "users")
-@Getter @Setter @Builder @NoArgsConstructor @AllArgsConstructor
+@EntityListeners(AuditingEntityListener.class)
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class User {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, length = 120)
+    @Column(nullable = false)
     private String name;
 
-    @Column(nullable = false, unique = true, length = 160)
+    @Column(nullable = false, unique = true)
     private String email;
 
-    @Column(name = "password_hash", nullable = false, length = 255)
-    private String passwordHash;
+    @Column(nullable = false)
+    private String password;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private String role = "USER";
 
     @Column(name = "is_premium", nullable = false)
     @Builder.Default
     private boolean premium = false;
 
-    /**
-     * When set, this user has time-limited premium (referral reward).
-     * Null = lifetime premium (from payment) or no premium.
-     * Expiry enforced lazily in CurrentUserService.getCurrentUser().
-     */
-    @Column(name = "premium_expires_at")
-    private Instant premiumExpiresAt;
-
-    @Column(name = "email_verified", nullable = false)
+    @Column(name = "is_email_verified", nullable = false)
     @Builder.Default
     private boolean emailVerified = false;
 
-    @Column(name = "enabled", nullable = false)
-    @Builder.Default
-    private boolean enabled = false;
+    @Column(name = "email_otp", length = 6)
+    private String emailOtp;
 
-    /**
-     * Unique 8-char referral code. Generated at registration.
-     * Uppercase alphanumeric, no ambiguous characters.
-     */
-    @Column(name = "referral_code", unique = true, length = 12)
+    @Column(name = "email_otp_expires_at")
+    private LocalDateTime emailOtpExpiresAt;
+
+    @Column(name = "password_reset_token")
+    private String passwordResetToken;
+
+    @Column(name = "password_reset_expires_at")
+    private LocalDateTime passwordResetExpiresAt;
+
+    @Column(name = "referral_code", unique = true, length = 20)
     private String referralCode;
 
-    /**
-     * User role — controls access to admin endpoints.
-     * Values: "USER" (default) | "ADMIN"
-     * Spring Security uses this as ROLE_USER / ROLE_ADMIN.
-     */
-    @Column(nullable = false, length = 20)
-    @Builder.Default
-    private String role = "USER";
+    @Column(name = "referred_by_user_id")
+    private Long referredByUserId;
 
+    @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
-    @Builder.Default
-    private Instant createdAt = Instant.now();
+    private LocalDateTime createdAt;
 
-    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
-    @Builder.Default
-    private List<Resume> resumes = new ArrayList<>();
-
-    /** True if this user has active premium right now (handles lifetime and time-limited). */
-    public boolean isPremiumActive() {
-        if (!premium) return false;
-        if (premiumExpiresAt == null) return true;
-        return Instant.now().isBefore(premiumExpiresAt);
-    }
-
-    public boolean isAdmin() {
-        return "ADMIN".equals(role);
-    }
+    @LastModifiedDate
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
 }

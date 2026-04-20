@@ -3,15 +3,21 @@ package com.resumeforge.ai.dto;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import lombok.Data;
 
-public record RegisterRequest(
-        @NotBlank @Size(max = 120) String name,
-        @NotBlank @Email @Size(max = 160) String email,
-        @NotBlank @Size(min = 8, max = 64) String password,
-        /**
-         * Optional referral code from another user's share link.
-         * Format: 8 uppercase alphanumeric chars.
-         * Silently ignored if invalid (non-existent code doesn't fail registration).
-         */
-        String referralCode
-) {}
+@Data
+public class RegisterRequest {
+    @NotBlank(message = "Name is required")
+    @Size(min = 2, max = 255, message = "Name must be between 2 and 255 characters")
+    private String name;
+
+    @NotBlank(message = "Email is required")
+    @Email(message = "Invalid email format")
+    private String email;
+
+    @NotBlank(message = "Password is required")
+    @Size(min = 6, message = "Password must be at least 6 characters")
+    private String password;
+
+    private String referralCode;
+}

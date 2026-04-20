@@ -1,6 +1,10 @@
 package com.resumeforge.ai.dto;
 
+import lombok.Data;
+
 import java.math.BigDecimal;
 
-public record PaymentCreateRequest(BigDecimal amount) {
+@Data
+public class PaymentCreateRequest {
+    private BigDecimal amount;
 }

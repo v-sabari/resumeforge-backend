@@ -1,56 +1,53 @@
 package com.resumeforge.ai.controller;
 
 import com.resumeforge.ai.dto.*;
+import com.resumeforge.ai.entity.User;
 import com.resumeforge.ai.service.AuthService;
-import com.resumeforge.ai.service.CurrentUserService;
 import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
-    private final AuthService authService;
-    private final CurrentUserService currentUserService;
 
-    public AuthController(AuthService authService, CurrentUserService currentUserService) {
-        this.authService = authService;
-        this.currentUserService = currentUserService;
-    }
+    @Autowired
+    private AuthService authService;
 
     @PostMapping("/register")
-    @ResponseStatus(HttpStatus.CREATED)
-    public RegisterResponse register(@Valid @RequestBody RegisterRequest request) {
-        return authService.register(request);
+    public ResponseEntity<ApiResponse> register(@Valid @RequestBody RegisterRequest request) {
+        return ResponseEntity.ok(authService.register(request));
     }
 
     @PostMapping("/verify-email-otp")
-    public MessageResponse verifyEmailOtp(@Valid @RequestBody VerifyOtpRequest request) {
-        return authService.verifyEmailOtp(request);
+    public ResponseEntity<AuthResponse> verifyEmail(@Valid @RequestBody VerifyEmailRequest request) {
+        return ResponseEntity.ok(authService.verifyEmailOtp(request));
     }
 
     @PostMapping("/resend-email-otp")
-    public MessageResponse resendEmailOtp(@Valid @RequestBody ResendOtpRequest request) {
-        return authService.resendVerificationOtp(request);
-    }
-
-    @PostMapping("/forgot-password")
-    public MessageResponse forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
-        return authService.forgotPassword(request);
-    }
-
-    @PostMapping("/reset-password")
-    public MessageResponse resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
-        return authService.resetPassword(request);
+    public ResponseEntity<ApiResponse> resendOtp(@Valid @RequestBody ResendOtpRequest request) {
+        return ResponseEntity.ok(authService.resendOtp(request));
     }
 
     @PostMapping("/login")
-    public AuthResponse login(@Valid @RequestBody LoginRequest request) {
-        return authService.login(request);
+    public ResponseEntity<AuthResponse> login(@Valid @RequestBody AuthRequest request) {
+        return ResponseEntity.ok(authService.login(request));
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<ApiResponse> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        return ResponseEntity.ok(authService.forgotPassword(request));
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<ApiResponse> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        return ResponseEntity.ok(authService.resetPassword(request));
     }
 
     @GetMapping("/me")
-    public UserResponse me() {
-        return authService.getMe(currentUserService.getCurrentUser());
+    public ResponseEntity<UserResponse> getCurrentUser(@AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(authService.getCurrentUser(user));
     }
 }

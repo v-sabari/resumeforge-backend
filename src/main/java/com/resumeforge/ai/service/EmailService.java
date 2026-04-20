@@ -1,15 +1,15 @@
 package com.resumeforge.ai.service;
 
-import com.resumeforge.ai.exception.ApiException;
+import com.resumeforge.ai.entity.Payment;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
 
-import java.io.IOException;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
+import java.math.BigDecimal;
+import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.Map;
 
 @Service
 public class EmailService {
@@ -26,149 +26,225 @@ public class EmailService {
     @Value("${app.contact.receiver-email}")
     private String contactReceiverEmail;
 
-    public void sendVerificationOtp(String toEmail, String otpCode) {
-        String subject = "Verify your ResumeForge AI account";
-        String html = """
-                <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111827;">
-                  <h2 style="margin-bottom: 8px;">Verify your email</h2>
-                  <p>Thanks for signing up for <strong>ResumeForge AI</strong>.</p>
-                  <p>Use the OTP below to verify your email address:</p>
-                  <div style="font-size: 28px; font-weight: 700; letter-spacing: 6px; margin: 20px 0; color: #2563eb;">
-                    %s
-                  </div>
-                  <p>This OTP expires in <strong>5 minutes</strong>.</p>
-                  <p>If you did not create this account, you can safely ignore this email.</p>
-                </div>
-                """.formatted(otpCode);
+    private final RestTemplate restTemplate = new RestTemplate();
+    private static final String RESEND_API_URL = "https://api.resend.com/emails";
 
-        sendEmail(toEmail, subject, html, null);
-    }
-    public void sendInvoiceEmail(String to,String customername,String subject,byte[] pdfBytes){
-
-    }
-    public void sendPasswordResetOtp(String toEmail, String otpCode) {
-        String subject = "Reset your ResumeForge AI password";
-        String html = """
-            <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111827;">
-              <h2 style="margin-bottom: 8px;">Reset your password</h2>
-              <p>We received a request to reset your <strong>ResumeForge AI</strong> password.</p>
-              <p>Use the OTP below to continue:</p>
-              <div style="font-size: 28px; font-weight: 700; letter-spacing: 6px; margin: 20px 0; color: #2563eb;">
-                %s
-              </div>
-              <p>This OTP expires in <strong>5 minutes</strong>.</p>
-              <p>If you did not request a password reset, you can safely ignore this email.</p>
-            </div>
-            """.formatted(otpCode);
-
-        sendEmail(toEmail, subject, html, null);
-    }
-    public void sendContactMessage(String name, String email, String subject, String message) {
-        String safeName = name == null ? "" : name.trim();
-        String safeEmail = email == null ? "" : email.trim().toLowerCase();
-        String safeSubject = subject == null ? "" : subject.trim();
-        String safeMessage = message == null ? "" : message.trim();
-
-        String finalSubject = "[Contact] " + safeSubject;
-
-        String html = """
-                <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111827;">
-                  <h2 style="margin-bottom: 12px;">New Contact Message</h2>
-                  <p><strong>Name:</strong> %s</p>
-                  <p><strong>Email:</strong> %s</p>
-                  <p><strong>Subject:</strong> %s</p>
-                  <hr style="margin: 16px 0; border: none; border-top: 1px solid #e5e7eb;" />
-                  <p style="white-space: pre-wrap;">%s</p>
-                </div>
-                """.formatted(
-                escapeHtml(safeName),
-                escapeHtml(safeEmail),
-                escapeHtml(safeSubject),
-                escapeHtml(safeMessage)
-        );
-
-        sendEmail(contactReceiverEmail, finalSubject, html, safeEmail);
+    public void sendVerificationEmail(String toEmail, String otp) {
+        String subject = "Verify Your Email - ResumeForge AI";
+        String html = buildVerificationEmailHtml(otp);
+        sendEmail(toEmail, subject, html);
     }
 
-    private void sendEmail(String toEmail, String subject, String html, String replyTo) {
+    public void sendPasswordResetEmail(String toEmail, String resetToken) {
+        String subject = "Reset Your Password - ResumeForge AI";
+        String resetLink = "https://www.resumeforgeai.site/reset-password?token=" + resetToken;
+        String html = buildPasswordResetEmailHtml(resetLink);
+        sendEmail(toEmail, subject, html);
+    }
+
+    public void sendInvoiceEmail(String toEmail, Payment payment) {
+        String subject = "Payment Invoice - ResumeForge AI";
+        String html = buildInvoiceEmailHtml(payment);
+        sendEmail(toEmail, subject, html);
+    }
+
+    public void sendContactNotification(String name, String email, String message) {
+        String subject = "New Contact Form Submission";
+        String html = buildContactNotificationHtml(name, email, message);
+        sendEmail(contactReceiverEmail, subject, html);
+    }
+
+    private void sendEmail(String toEmail, String subject, String html) {
         try {
-            URL url = new URL("https://api.resend.com/emails");
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setBearerAuth(resendApiKey);
 
-            connection.setRequestMethod("POST");
-            connection.setRequestProperty("Authorization", "Bearer " + resendApiKey);
-            connection.setRequestProperty("Content-Type", "application/json");
-            connection.setDoOutput(true);
+            Map<String, Object> emailData = new HashMap<>();
+            emailData.put("from", fromName + " <" + fromEmail + ">");
+            emailData.put("to", new String[]{toEmail});
+            emailData.put("subject", subject);
+            emailData.put("html", html);
 
-            String json;
-            if (replyTo != null && !replyTo.isBlank()) {
-                json = """
-                        {
-                          "from": "%s <%s>",
-                          "to": ["%s"],
-                          "reply_to": "%s",
-                          "subject": "%s",
-                          "html": %s
-                        }
-                        """.formatted(
-                        escapeJson(fromName),
-                        escapeJson(fromEmail),
-                        escapeJson(toEmail),
-                        escapeJson(replyTo),
-                        escapeJson(subject),
-                        toJsonString(html)
-                );
-            } else {
-                json = """
-                        {
-                          "from": "%s <%s>",
-                          "to": ["%s"],
-                          "subject": "%s",
-                          "html": %s
-                        }
-                        """.formatted(
-                        escapeJson(fromName),
-                        escapeJson(fromEmail),
-                        escapeJson(toEmail),
-                        escapeJson(subject),
-                        toJsonString(html)
-                );
-            }
-
-            try (OutputStream os = connection.getOutputStream()) {
-                os.write(json.getBytes(StandardCharsets.UTF_8));
-            }
-
-            int status = connection.getResponseCode();
-            if (status < 200 || status >= 300) {
-                throw new ApiException(HttpStatus.BAD_GATEWAY, "Could not send email");
-            }
-
-        } catch (IOException e) {
-            throw new ApiException(HttpStatus.BAD_GATEWAY, "Could not send email");
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(emailData, headers);
+            restTemplate.exchange(RESEND_API_URL, HttpMethod.POST, request, String.class);
+        } catch (Exception e) {
+            System.err.println("Failed to send email: " + e.getMessage());
         }
     }
 
-    private String escapeJson(String value) {
-        return value
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"");
+    private String buildVerificationEmailHtml(String otp) {
+        return """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Email Verification</title>
+            </head>
+            <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4;">
+                <table width="100%%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f4; padding: 20px;">
+                    <tr>
+                        <td align="center">
+                            <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; overflow: hidden;">
+                                <tr>
+                                    <td style="background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); padding: 40px; text-align: center;">
+                                        <h1 style="color: #ffffff; margin: 0; font-size: 28px;">ResumeForge AI</h1>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 40px;">
+                                        <h2 style="color: #333333; margin-top: 0;">Verify Your Email Address</h2>
+                                        <p style="color: #666666; line-height: 1.6;">Thank you for signing up! Please use the OTP below to verify your email address:</p>
+                                        <div style="background-color: #f8f8f8; border: 2px dashed #667eea; border-radius: 8px; padding: 20px; text-align: center; margin: 30px 0;">
+                                            <span style="font-size: 32px; font-weight: bold; color: #667eea; letter-spacing: 8px;">%s</span>
+                                        </div>
+                                        <p style="color: #666666; line-height: 1.6;">This OTP will expire in 10 minutes.</p>
+                                        <p style="color: #666666; line-height: 1.6;">If you didn't create an account with ResumeForge AI, please ignore this email.</p>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="background-color: #f8f8f8; padding: 20px; text-align: center;">
+                                        <p style="color: #999999; font-size: 12px; margin: 0;">© 2024 ResumeForge AI. All rights reserved.</p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </body>
+            </html>
+            """.formatted(otp);
     }
 
-    private String toJsonString(String value) {
-        return "\"" + value
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "") + "\"";
+    private String buildPasswordResetEmailHtml(String resetLink) {
+        return """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Password Reset</title>
+            </head>
+            <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4;">
+                <table width="100%%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f4; padding: 20px;">
+                    <tr>
+                        <td align="center">
+                            <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; overflow: hidden;">
+                                <tr>
+                                    <td style="background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); padding: 40px; text-align: center;">
+                                        <h1 style="color: #ffffff; margin: 0; font-size: 28px;">ResumeForge AI</h1>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 40px;">
+                                        <h2 style="color: #333333; margin-top: 0;">Reset Your Password</h2>
+                                        <p style="color: #666666; line-height: 1.6;">We received a request to reset your password. Click the button below to proceed:</p>
+                                        <div style="text-align: center; margin: 30px 0;">
+                                            <a href="%s" style="background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); color: #ffffff; padding: 12px 30px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">Reset Password</a>
+                                        </div>
+                                        <p style="color: #666666; line-height: 1.6;">This link will expire in 1 hour.</p>
+                                        <p style="color: #666666; line-height: 1.6;">If you didn't request a password reset, please ignore this email.</p>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="background-color: #f8f8f8; padding: 20px; text-align: center;">
+                                        <p style="color: #999999; font-size: 12px; margin: 0;">© 2024 ResumeForge AI. All rights reserved.</p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </body>
+            </html>
+            """.formatted(resetLink);
     }
 
-    private String escapeHtml(String value) {
-        return value
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;")
-                .replace("'", "&#39;");
+    private String buildInvoiceEmailHtml(Payment payment) {
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MMM dd, yyyy HH:mm");
+        String formattedDate = payment.getCreatedAt().format(formatter);
+        
+        return """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Payment Invoice</title>
+            </head>
+            <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4;">
+                <table width="100%%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f4; padding: 20px;">
+                    <tr>
+                        <td align="center">
+                            <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; overflow: hidden;">
+                                <tr>
+                                    <td style="background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); padding: 40px; text-align: center;">
+                                        <h1 style="color: #ffffff; margin: 0; font-size: 28px;">Payment Invoice</h1>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 40px;">
+                                        <h2 style="color: #333333; margin-top: 0;">Thank You for Your Payment!</h2>
+                                        <p style="color: #666666; line-height: 1.6;">Your premium subscription has been activated.</p>
+                                        
+                                        <table width="100%%" cellpadding="10" cellspacing="0" style="margin: 30px 0; border: 1px solid #e0e0e0; border-radius: 6px;">
+                                            <tr>
+                                                <td style="background-color: #f8f8f8; font-weight: bold; color: #333333;">Payment ID:</td>
+                                                <td style="color: #666666;">%s</td>
+                                            </tr>
+                                            <tr>
+                                                <td style="background-color: #f8f8f8; font-weight: bold; color: #333333;">Amount:</td>
+                                                <td style="color: #666666;">₹%s</td>
+                                            </tr>
+                                            <tr>
+                                                <td style="background-color: #f8f8f8; font-weight: bold; color: #333333;">Status:</td>
+                                                <td style="color: #4caf50; font-weight: bold;">%s</td>
+                                            </tr>
+                                            <tr>
+                                                <td style="background-color: #f8f8f8; font-weight: bold; color: #333333;">Date:</td>
+                                                <td style="color: #666666;">%s</td>
+                                            </tr>
+                                        </table>
+                                        
+                                        <p style="color: #666666; line-height: 1.6;">If you have any questions, feel free to contact our support team.</p>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="background-color: #f8f8f8; padding: 20px; text-align: center;">
+                                        <p style="color: #999999; font-size: 12px; margin: 0;">© 2024 ResumeForge AI. All rights reserved.</p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </body>
+            </html>
+            """.formatted(
+                payment.getRazorpayPaymentId(),
+                payment.getAmount(),
+                payment.getStatus(),
+                formattedDate
+            );
+    }
+
+    private String buildContactNotificationHtml(String name, String email, String message) {
+        return """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <title>New Contact Form Submission</title>
+            </head>
+            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333333;">
+                <h2>New Contact Form Submission</h2>
+                <p><strong>Name:</strong> %s</p>
+                <p><strong>Email:</strong> %s</p>
+                <p><strong>Message:</strong></p>
+                <p>%s</p>
+            </body>
+            </html>
+            """.formatted(name, email, message);
     }
 }

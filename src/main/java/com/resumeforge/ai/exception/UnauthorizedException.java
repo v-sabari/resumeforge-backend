@@ -1,9 +1,7 @@
 package com.resumeforge.ai.exception;
 
-import org.springframework.http.HttpStatus;
-
-public class UnauthorizedException extends ApiException {
+public class UnauthorizedException extends RuntimeException {
     public UnauthorizedException(String message) {
-        super(HttpStatus.UNAUTHORIZED, message);
+        super(message);
     }
 }

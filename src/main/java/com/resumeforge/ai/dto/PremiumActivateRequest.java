@@ -1,4 +1,10 @@
 package com.resumeforge.ai.dto;
 
-public record PremiumActivateRequest(String paymentId) {
+import jakarta.validation.constraints.NotNull;
+import lombok.Data;
+
+@Data
+public class PremiumActivateRequest {
+    @NotNull(message = "Payment ID is required")
+    private Long paymentId;
 }

@@ -1,11 +1,17 @@
 package com.resumeforge.ai.dto;
 
-public record ExportStatusResponse(
-        boolean premium,
-        int usedExports,
-        int remainingFreeExports,
-        boolean adCompleted,
-        boolean canExport,
-        String message
-) {
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class ExportStatusResponse {
+    private boolean canExport;
+    private String reason;
+    private long exportsToday;
+    private long exportLimit;
 }

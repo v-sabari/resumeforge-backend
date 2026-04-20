@@ -1,13 +1,25 @@
 package com.resumeforge.ai.dto;
 
-import java.math.BigDecimal;
-import java.time.Instant;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
-public record PaymentResponse(
-        Long id,
-        String paymentId,
-        BigDecimal amount,
-        String status,
-        Instant createdAt
-) {
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class PaymentResponse {
+    private Long id;
+    private Long userId;
+    private String razorpayOrderId;
+    private String razorpayPaymentId;
+    private BigDecimal amount;
+    private String currency;
+    private String status;
+    private String paymentMethod;
+    private LocalDateTime createdAt;
 }

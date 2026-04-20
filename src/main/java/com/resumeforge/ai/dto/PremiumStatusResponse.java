@@ -1,8 +1,15 @@
 package com.resumeforge.ai.dto;
 
-public record PremiumStatusResponse(
-        boolean premium,
-        String plan,
-        String message
-) {
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class PremiumStatusResponse {
+    private boolean premium;
+    private String source;
 }

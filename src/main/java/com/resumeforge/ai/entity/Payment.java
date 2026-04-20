@@ -2,65 +2,62 @@ package com.resumeforge.ai.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.math.BigDecimal;
-import java.time.Instant;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "payments")
+@EntityListeners(AuditingEntityListener.class)
 @Getter
 @Setter
-@Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@Builder
 public class Payment {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
-    private User user;
+    @Column(name = "user_id", nullable = false)
+    private Long userId;
 
-    /**
-     * Internal idempotency key generated at order-creation time.
-     * Format: "pay_" + 18 random hex chars.
-     * This is NOT the Razorpay payment ID.
-     */
-    @Column(name = "payment_id", nullable = false, unique = true, length = 120)
-    private String paymentId;
-
-    /**
-     * The actual Razorpay payment ID (e.g. "pay_ABC123XYZ").
-     * Populated when Razorpay confirms capture via webhook or verify endpoint.
-     * Null until then.
-     */
-    @Column(name = "razorpay_payment_id", unique = true, length = 120)
-    private String razorpayPaymentId;
-
-    /**
-     * Razorpay order ID or payment link ID associated with this payment.
-     * Used for deduplication in webhook processing.
-     */
-    @Column(name = "razorpay_order_id", length = 120)
+    @Column(name = "razorpay_order_id")
     private String razorpayOrderId;
 
-    @Column(nullable = false, precision = 10, scale = 2)
+    @Column(name = "razorpay_payment_id")
+    private String razorpayPaymentId;
+
+    @Column(name = "razorpay_signature")
+    private String razorpaySignature;
+
+    @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal amount;
 
-    /**
-     * Lifecycle: CREATED → PAID | FAILED
-     * Set ONLY by server-side verification (HMAC or webhook). Never by client.
-     */
-    @Column(nullable = false, length = 40)
-    private String status;
-
-    /** Timestamp when Razorpay confirmed the payment. Null until captured. */
-    @Column(name = "captured_at")
-    private Instant capturedAt;
-
-    @Column(name = "created_at", nullable = false, updatable = false)
+    @Column(nullable = false, length = 10)
     @Builder.Default
-    private Instant createdAt = Instant.now();
+    private String currency = "INR";
+
+    @Column(nullable = false, length = 50)
+    @Builder.Default
+    private String status = "PENDING";
+
+    @Column(name = "payment_method", length = 100)
+    private String paymentMethod;
+
+    @Column(name = "invoice_sent", nullable = false)
+    @Builder.Default
+    private boolean invoiceSent = false;
+
+    @CreatedDate
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @LastModifiedDate
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
 }

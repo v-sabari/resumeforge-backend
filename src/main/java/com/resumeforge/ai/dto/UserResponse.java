@@ -1,16 +1,20 @@
 package com.resumeforge.ai.dto;
 
-import java.time.Instant;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
-public record UserResponse(
-        Long id,
-        String name,
-        String email,
-        boolean isPremium,
-        boolean emailVerified,
-        Instant createdAt,
-        /** "USER" or "ADMIN" — used by frontend to show/hide admin nav link. */
-        String role,
-        /** The user's own referral code — displayed in the referral hub. */
-        String referralCode
-) {}
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class UserResponse {
+    private Long id;
+    private String name;
+    private String email;
+    private String role;
+    private boolean premium;
+    private boolean emailVerified;
+    private String referralCode;
+}

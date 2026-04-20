@@ -1,269 +1,176 @@
 package com.resumeforge.ai.service;
 
 import com.resumeforge.ai.dto.*;
-import com.resumeforge.ai.entity.EmailOtp;
 import com.resumeforge.ai.entity.User;
-import com.resumeforge.ai.exception.ApiException;
-import com.resumeforge.ai.repository.EmailOtpRepository;
+import com.resumeforge.ai.exception.BadRequestException;
+import com.resumeforge.ai.exception.UnauthorizedException;
 import com.resumeforge.ai.repository.UserRepository;
-import com.resumeforge.ai.security.JwtService;
-import org.springframework.http.HttpStatus;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import com.resumeforge.ai.security.JwtUtil;
+import com.resumeforge.ai.util.OtpUtil;
+import com.resumeforge.ai.util.ReferralCodeUtil;
+import com.resumeforge.ai.util.TokenUtil;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.security.SecureRandom;
-import java.time.Instant;
-import java.util.List;
+import java.time.LocalDateTime;
 
 @Service
 public class AuthService {
 
-    private static final String OTP_PURPOSE_VERIFY_EMAIL   = "VERIFY_EMAIL";
-    private static final String OTP_PURPOSE_RESET_PASSWORD = "RESET_PASSWORD";
-    private static final int    OTP_EXPIRY_SECONDS         = 300;
+    @Autowired
+    private UserRepository userRepository;
 
-    private final UserRepository       userRepository;
-    private final EmailOtpRepository   emailOtpRepository;
-    private final PasswordEncoder      passwordEncoder;
-    private final JwtService           jwtService;
-    private final AuthenticationManager authenticationManager;
-    private final EmailService         emailService;
-    private final ReferralService      referralService;
-    private final OtpAttemptService    otpAttemptService;
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 
-    public AuthService(UserRepository userRepository,
-                       EmailOtpRepository emailOtpRepository,
-                       PasswordEncoder passwordEncoder,
-                       JwtService jwtService,
-                       AuthenticationManager authenticationManager,
-                       EmailService emailService,
-                       ReferralService referralService,
-                       OtpAttemptService otpAttemptService) {
-        this.userRepository        = userRepository;
-        this.emailOtpRepository    = emailOtpRepository;
-        this.passwordEncoder       = passwordEncoder;
-        this.jwtService            = jwtService;
-        this.authenticationManager = authenticationManager;
-        this.emailService          = emailService;
-        this.referralService       = referralService;
-        this.otpAttemptService     = otpAttemptService;
-    }
+    @Autowired
+    private JwtUtil jwtUtil;
 
-    public RegisterResponse register(RegisterRequest request) {
-        String email = request.email().trim().toLowerCase();
+    @Autowired
+    private EmailService emailService;
 
-        if (userRepository.existsByEmailIgnoreCase(email)) {
-            throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists");
+    @Transactional
+    public ApiResponse register(RegisterRequest request) {
+        if (userRepository.existsByEmail(request.getEmail())) {
+            throw new BadRequestException("Email already registered");
         }
-
-        String referralCode = referralService.generateUniqueReferralCode();
 
         User user = User.builder()
-                .name(request.name().trim())
-                .email(email)
-                .passwordHash(passwordEncoder.encode(request.password()))
+                .name(request.getName())
+                .email(request.getEmail())
+                .password(passwordEncoder.encode(request.getPassword()))
+                .role("USER")
                 .premium(false)
                 .emailVerified(false)
-                .enabled(false)
-                .referralCode(referralCode)
+                .emailOtp(OtpUtil.generateOtp())
+                .emailOtpExpiresAt(LocalDateTime.now().plusMinutes(10))
+                .referralCode(ReferralCodeUtil.generateReferralCode())
                 .build();
 
-        userRepository.save(user);
-
-        if (request.referralCode() != null && !request.referralCode().isBlank()) {
-            referralService.recordReferralAtRegistration(user, request.referralCode().trim());
+        if (request.getReferralCode() != null && !request.getReferralCode().isEmpty()) {
+            User referrer = userRepository.findByReferralCode(request.getReferralCode()).orElse(null);
+            if (referrer != null) {
+                user.setReferredByUserId(referrer.getId());
+            }
         }
 
-        issueOtp(email, OTP_PURPOSE_VERIFY_EMAIL);
-        emailService.sendVerificationOtp(email, getLatestOtp(email, OTP_PURPOSE_VERIFY_EMAIL));
+        userRepository.save(user);
+        emailService.sendVerificationEmail(user.getEmail(), user.getEmailOtp());
 
-        return new RegisterResponse("Verification OTP sent to your email address", email);
+        return ApiResponse.success("Registration successful. Please check your email for OTP.");
     }
 
-    public MessageResponse verifyEmailOtp(VerifyOtpRequest request) {
-        String email = request.email().trim().toLowerCase();
+    @Transactional
+    public AuthResponse verifyEmailOtp(VerifyEmailRequest request) {
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new BadRequestException("User not found"));
 
-        // ── OTP brute-force protection ──────────────────────────────────
-        if (otpAttemptService.isLockedOut(email)) {
-            long remaining = otpAttemptService.lockoutSecondsRemaining(email);
-            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS,
-                    "Too many incorrect attempts. Please wait " + (remaining / 60 + 1) +
-                    " minute(s) before trying again.");
+        if (user.isEmailVerified()) {
+            throw new BadRequestException("Email already verified");
         }
 
-        EmailOtp otp = emailOtpRepository
-                .findTopByEmailIgnoreCaseAndPurposeOrderByCreatedAtDesc(email, OTP_PURPOSE_VERIFY_EMAIL)
-                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "OTP not found"));
-
-        if (otp.isUsed()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "OTP already used");
-        }
-        if (otp.getExpiresAt().isBefore(Instant.now())) {
-            otpAttemptService.recordFailure(email);
-            throw new ApiException(HttpStatus.BAD_REQUEST, "OTP expired");
-        }
-        if (!otp.getOtpCode().equals(request.otp().trim())) {
-            otpAttemptService.recordFailure(email);
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid OTP");
+        if (user.getEmailOtp() == null || !user.getEmailOtp().equals(request.getOtp())) {
+            throw new BadRequestException("Invalid OTP");
         }
 
-        // Correct OTP — clear lockout counter
-        otpAttemptService.clearAttempts(email);
-
-        otp.setUsed(true);
-        emailOtpRepository.save(otp);
-
-        User user = userRepository.findByEmailIgnoreCase(email)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "User not found"));
+        if (user.getEmailOtpExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new BadRequestException("OTP expired");
+        }
 
         user.setEmailVerified(true);
-        user.setEnabled(true);
+        user.setEmailOtp(null);
+        user.setEmailOtpExpiresAt(null);
         userRepository.save(user);
 
-        try { referralService.checkAndQualifyReferral(user); } catch (Exception ignored) {}
-
-        return new MessageResponse("Email verified successfully");
+        String token = jwtUtil.generateToken(user.getEmail(), user.getId());
+        
+        return AuthResponse.builder()
+                .token(token)
+                .user(toUserResponse(user))
+                .build();
     }
 
-    public MessageResponse resendVerificationOtp(ResendOtpRequest request) {
-        String email = request.email().trim().toLowerCase();
+    @Transactional
+    public ApiResponse resendOtp(ResendOtpRequest request) {
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new BadRequestException("User not found"));
 
-        User user = userRepository.findByEmailIgnoreCase(email)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "No account found for this email"));
+        if (user.isEmailVerified()) {
+            throw new BadRequestException("Email already verified");
+        }
 
-        if (user.isEmailVerified())
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Email is already verified");
+        user.setEmailOtp(OtpUtil.generateOtp());
+        user.setEmailOtpExpiresAt(LocalDateTime.now().plusMinutes(10));
+        userRepository.save(user);
 
-        // Clear lockout counter when user requests a fresh OTP
-        otpAttemptService.clearAttempts(email);
+        emailService.sendVerificationEmail(user.getEmail(), user.getEmailOtp());
 
-        invalidatePreviousUnusedOtps(email, OTP_PURPOSE_VERIFY_EMAIL);
-        String otpCode = generateOtp();
-        saveOtp(email, otpCode, OTP_PURPOSE_VERIFY_EMAIL);
-        emailService.sendVerificationOtp(email, otpCode);
-
-        return new MessageResponse("A new OTP has been sent to your email");
+        return ApiResponse.success("OTP resent successfully");
     }
 
-    public AuthResponse login(LoginRequest request) {
-        String email = request.email().trim().toLowerCase();
+    public AuthResponse login(AuthRequest request) {
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new UnauthorizedException("Invalid email or password"));
 
-        User user = userRepository.findByEmailIgnoreCase(email)
-                .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "Invalid credentials"));
+        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+            throw new UnauthorizedException("Invalid email or password");
+        }
 
-        if (!user.isEmailVerified() || !user.isEnabled())
-            throw new ApiException(HttpStatus.UNAUTHORIZED,
-                    "Please verify your email before logging in");
-
-        authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(email, request.password()));
-
-        return new AuthResponse(jwtService.generateToken(user.getEmail()), toUserResponse(user));
+        String token = jwtUtil.generateToken(user.getEmail(), user.getId());
+        
+        return AuthResponse.builder()
+                .token(token)
+                .user(toUserResponse(user))
+                .build();
     }
 
-    public UserResponse getMe(User user) {
+    @Transactional
+    public ApiResponse forgotPassword(ForgotPasswordRequest request) {
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new BadRequestException("User not found"));
+
+        String resetToken = TokenUtil.generateToken();
+        user.setPasswordResetToken(resetToken);
+        user.setPasswordResetExpiresAt(LocalDateTime.now().plusHours(1));
+        userRepository.save(user);
+
+        emailService.sendPasswordResetEmail(user.getEmail(), resetToken);
+
+        return ApiResponse.success("Password reset link sent to your email");
+    }
+
+    @Transactional
+    public ApiResponse resetPassword(ResetPasswordRequest request) {
+        User user = userRepository.findByPasswordResetToken(request.getToken())
+                .orElseThrow(() -> new BadRequestException("Invalid or expired reset token"));
+
+        if (user.getPasswordResetExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new BadRequestException("Reset token expired");
+        }
+
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        user.setPasswordResetToken(null);
+        user.setPasswordResetExpiresAt(null);
+        userRepository.save(user);
+
+        return ApiResponse.success("Password reset successful");
+    }
+
+    public UserResponse getCurrentUser(User user) {
         return toUserResponse(user);
     }
 
-    public UserResponse toUserResponse(User user) {
-        return new UserResponse(
-                user.getId(), user.getName(), user.getEmail(),
-                user.isPremium(), user.isEmailVerified(), user.getCreatedAt(),
-                user.getRole() != null ? user.getRole() : "USER",
-                user.getReferralCode()
-        );
-    }
-
-    public MessageResponse forgotPassword(ForgotPasswordRequest request) {
-        String email = request.email().trim().toLowerCase();
-        User user = userRepository.findByEmailIgnoreCase(email).orElse(null);
-
-        if (user == null || !user.isEmailVerified() || !user.isEnabled()) {
-            // Always return the same message to prevent email enumeration
-            return new MessageResponse(
-                    "If an account exists with this email, a password reset OTP has been sent");
-        }
-
-        invalidatePreviousUnusedOtps(email, OTP_PURPOSE_RESET_PASSWORD);
-        String otpCode = generateOtp();
-        saveOtp(email, otpCode, OTP_PURPOSE_RESET_PASSWORD);
-        emailService.sendPasswordResetOtp(email, otpCode);
-
-        return new MessageResponse(
-                "If an account exists with this email, a password reset OTP has been sent");
-    }
-
-    public MessageResponse resetPassword(ResetPasswordRequest request) {
-        String email = request.email().trim().toLowerCase();
-
-        // ── OTP brute-force protection ──────────────────────────────────
-        if (otpAttemptService.isLockedOut(email)) {
-            long remaining = otpAttemptService.lockoutSecondsRemaining(email);
-            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS,
-                    "Too many incorrect attempts. Please wait " + (remaining / 60 + 1) +
-                    " minute(s) before trying again.");
-        }
-
-        if (!request.newPassword().equals(request.confirmPassword()))
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Passwords do not match");
-
-        EmailOtp otp = emailOtpRepository
-                .findTopByEmailIgnoreCaseAndPurposeOrderByCreatedAtDesc(email, OTP_PURPOSE_RESET_PASSWORD)
-                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "OTP not found"));
-
-        if (otp.isUsed()) throw new ApiException(HttpStatus.BAD_REQUEST, "OTP already used");
-        if (otp.getExpiresAt().isBefore(Instant.now())) {
-            otpAttemptService.recordFailure(email);
-            throw new ApiException(HttpStatus.BAD_REQUEST, "OTP expired");
-        }
-        if (!otp.getOtpCode().equals(request.otp().trim())) {
-            otpAttemptService.recordFailure(email);
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid OTP");
-        }
-
-        otpAttemptService.clearAttempts(email);
-
-        User user = userRepository.findByEmailIgnoreCase(email)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "User not found"));
-
-        otp.setUsed(true);
-        emailOtpRepository.save(otp);
-        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
-        userRepository.save(user);
-        invalidatePreviousUnusedOtps(email, OTP_PURPOSE_RESET_PASSWORD);
-
-        return new MessageResponse("Password reset successfully");
-    }
-
-    // ── Internal helpers ─────────────────────────────────────────────────
-
-    private void issueOtp(String email, String purpose) {
-        invalidatePreviousUnusedOtps(email, purpose);
-        saveOtp(email, generateOtp(), purpose);
-    }
-
-    private void saveOtp(String email, String code, String purpose) {
-        emailOtpRepository.save(EmailOtp.builder()
-                .email(email).otpCode(code).purpose(purpose)
-                .expiresAt(Instant.now().plusSeconds(OTP_EXPIRY_SECONDS)).used(false).build());
-    }
-
-    private String getLatestOtp(String email, String purpose) {
-        return emailOtpRepository
-                .findTopByEmailIgnoreCaseAndPurposeOrderByCreatedAtDesc(email, purpose)
-                .map(EmailOtp::getOtpCode).orElse("");
-    }
-
-    private void invalidatePreviousUnusedOtps(String email, String purpose) {
-        List<EmailOtp> old = emailOtpRepository
-                .findByEmailIgnoreCaseAndPurposeAndUsedFalse(email, purpose);
-        old.forEach(o -> o.setUsed(true));
-        emailOtpRepository.saveAll(old);
-    }
-
-    private String generateOtp() {
-        return String.valueOf(100000 + new SecureRandom().nextInt(900000));
+    private UserResponse toUserResponse(User user) {
+        return UserResponse.builder()
+                .id(user.getId())
+                .name(user.getName())
+                .email(user.getEmail())
+                .role(user.getRole())
+                .premium(user.isPremium())
+                .emailVerified(user.isEmailVerified())
+                .referralCode(user.getReferralCode())
+                .build();
     }
 }

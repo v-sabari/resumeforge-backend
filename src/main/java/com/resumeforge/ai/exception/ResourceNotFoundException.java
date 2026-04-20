@@ -1,9 +1,7 @@
 package com.resumeforge.ai.exception;
 
-import org.springframework.http.HttpStatus;
-
-public class ResourceNotFoundException extends ApiException {
+public class ResourceNotFoundException extends RuntimeException {
     public ResourceNotFoundException(String message) {
-        super(HttpStatus.NOT_FOUND, message);
+        super(message);
     }
 }
