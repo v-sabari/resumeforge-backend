@@ -1,0 +1,2 @@
+ALTER TABLE ad_flow_log
+ADD COLUMN ad_type VARCHAR(100);
