@@ -1,0 +1,2 @@
+ALTER TABLE ad_flow_log
+ADD COLUMN status VARCHAR(100);
