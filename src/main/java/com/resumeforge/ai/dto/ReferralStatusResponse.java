@@ -13,6 +13,7 @@ import java.util.List;
 @AllArgsConstructor
 public class ReferralStatusResponse {
     private String referralCode;
+    private String referralLink;
     private long totalReferrals;
     private long verifiedReferrals;
     private long pendingRewards;

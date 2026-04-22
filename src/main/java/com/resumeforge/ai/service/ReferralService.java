@@ -7,6 +7,7 @@ import com.resumeforge.ai.entity.User;
 import com.resumeforge.ai.repository.ReferralRewardRepository;
 import com.resumeforge.ai.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -21,6 +22,9 @@ public class ReferralService {
     @Autowired
     private ReferralRewardRepository referralRewardRepository;
 
+    @Value("${app.frontend.base-url:https://www.resumeforgeai.site}")
+    private String frontendBaseUrl;
+
     public ReferralStatusResponse getReferralStatus(User user) {
         long totalReferrals = userRepository.countVerifiedReferrals(user.getId());
         long pendingRewards = referralRewardRepository.countByUserIdAndRewardStatus(user.getId(), "PENDING");
@@ -31,8 +35,12 @@ public class ReferralService {
                 .map(this::toRewardResponse)
                 .collect(Collectors.toList());
 
+        // Generate referral link
+        String referralLink = frontendBaseUrl + "/register?ref=" + user.getReferralCode();
+
         return ReferralStatusResponse.builder()
                 .referralCode(user.getReferralCode())
+                .referralLink(referralLink)
                 .totalReferrals(totalReferrals)
                 .verifiedReferrals(totalReferrals)
                 .pendingRewards(pendingRewards)
