@@ -2,48 +2,55 @@ package com.resumeforge.ai.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Entity
-@Table(name = "referral_rewards")
-@EntityListeners(AuditingEntityListener.class)
+@Table(
+        name = "referral_rewards",
+        indexes = {
+                @Index(name = "idx_referral_rewards_user", columnList = "user_id"),
+                @Index(name = "idx_referral_rewards_milestone", columnList = "milestone_count")
+        },
+        uniqueConstraints = {
+                @UniqueConstraint(name = "uk_referral_reward_user_milestone", columnNames = {"user_id", "milestone_count"})
+        }
+)
 @Getter
 @Setter
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
 public class ReferralReward {
+
+    public enum RewardType {
+        PREMIUM_DAYS_3,
+        ATS_PRO_UNLOCK,
+        PREMIUM_DAYS_30
+    }
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "user_id", nullable = false)
-    private Long userId;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user;
 
-    @Column(name = "referred_user_id")
-    private Long referredUserId;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "reward_type", nullable = false, length = 40)
+    private RewardType rewardType;
 
-    @Column(name = "reward_type", nullable = false, length = 100)
-    private String rewardType;
+    @Column(nullable = false, length = 255)
+    private String description;
 
-    @Column(name = "reward_value", precision = 12, scale = 2)
-    private BigDecimal rewardValue;
+    @Column(name = "milestone_count", nullable = false)
+    private Integer milestoneCount;
 
-    @Column(name = "reward_status", nullable = false, length = 50)
+    @Column(name = "granted_at", nullable = false, updatable = false)
     @Builder.Default
-    private String rewardStatus = "PENDING";
+    private Instant grantedAt = Instant.now();
 
-    @CreatedDate
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
-
-    @LastModifiedDate
-    @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
+    @Column(name = "expires_at")
+    private Instant expiresAt;
 }

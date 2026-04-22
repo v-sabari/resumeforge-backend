@@ -2,70 +2,51 @@ package com.resumeforge.ai.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "users")
-@EntityListeners(AuditingEntityListener.class)
 @Getter
 @Setter
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
 public class User {
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
+    @Column(nullable = false, length = 120)
     private String name;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false, unique = true, length = 160)
     private String email;
 
-    @Column(nullable = false)
-    private String password;
-
-    @Column(nullable = false)
-    @Builder.Default
-    private String role = "USER";
+    @Column(name = "password_hash", nullable = false, length = 255)
+    private String passwordHash;
 
     @Column(name = "is_premium", nullable = false)
     @Builder.Default
     private boolean premium = false;
 
-    @Column(name = "is_email_verified", nullable = false)
-    @Builder.Default
-    private boolean emailVerified = false;
+    @Column(name = "premium_expires_at")
+    private Instant premiumExpiresAt;
 
-    @Column(name = "email_otp", length = 6)
-    private String emailOtp;
-
-    @Column(name = "email_otp_expires_at")
-    private LocalDateTime emailOtpExpiresAt;
-
-    @Column(name = "password_reset_token")
-    private String passwordResetToken;
-
-    @Column(name = "password_reset_expires_at")
-    private LocalDateTime passwordResetExpiresAt;
-
-    @Column(name = "referral_code", unique = true, length = 20)
+    @Column(name = "referral_code", unique = true, length = 12)
     private String referralCode;
 
-    @Column(name = "referred_by_user_id")
-    private Long referredByUserId;
+    @Column(name = "has_created_resume", nullable = false)
+    @Builder.Default
+    private boolean hasCreatedResume = false;
 
-    @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    @Builder.Default
+    private Instant createdAt = Instant.now();
 
-    @LastModifiedDate
-    @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<Resume> resumes = new ArrayList<>();
 }
