@@ -2,10 +2,10 @@ package com.resumeforge.ai.controller;
 
 import com.resumeforge.ai.dto.ReferralStatusResponse;
 import com.resumeforge.ai.entity.User;
-import com.resumeforge.ai.exception.ApiException;
+import com.resumeforge.ai.exception.ResourceNotFoundException;
+import com.resumeforge.ai.exception.UnauthorizedException;
 import com.resumeforge.ai.repository.UserRepository;
 import com.resumeforge.ai.service.ReferralService;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -25,11 +25,12 @@ public class ReferralController {
     @GetMapping("/status")
     public ReferralStatusResponse status(Authentication authentication) {
         if (authentication == null || authentication.getName() == null || authentication.getName().isBlank()) {
-            throw new ApiException(HttpStatus.UNAUTHORIZED, "Authentication required");
+            throw new UnauthorizedException("Authentication required");
         }
 
         User user = userRepository.findByEmail(authentication.getName())
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
         return referralService.getReferralStatus(user);
     }
 }

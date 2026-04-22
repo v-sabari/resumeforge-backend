@@ -1,5 +1,5 @@
 package com.resumeforge.ai.service;
-
+import java.time.ZoneId;
 import com.resumeforge.ai.dto.*;
 import com.resumeforge.ai.entity.User;
 import com.resumeforge.ai.exception.ResourceNotFoundException;
@@ -133,7 +133,11 @@ public class AdminService {
                 .emailVerified(user.isEmailVerified())
                 .referralCode(user.getReferralCode())
                 .referredByUserId(user.getReferredByUserId())
-                .createdAt(user.getCreatedAt())
+                .createdAt(
+                        user.getCreatedAt() != null
+                                ? user.getCreatedAt().atZone(ZoneId.systemDefault()).toLocalDateTime()
+                                : null
+                )
                 .build();
     }
 }

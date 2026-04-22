@@ -4,12 +4,11 @@ import com.resumeforge.ai.dto.*;
 import com.resumeforge.ai.entity.ReferralHistory;
 import com.resumeforge.ai.entity.ReferralReward;
 import com.resumeforge.ai.entity.User;
-import com.resumeforge.ai.exception.ApiException;
+import com.resumeforge.ai.exception.BadRequestException;
 import com.resumeforge.ai.repository.ReferralHistoryRepository;
 import com.resumeforge.ai.repository.ReferralRewardRepository;
 import com.resumeforge.ai.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -57,14 +56,14 @@ public class ReferralService {
 
         String referralCode = rawReferralCode.trim().toUpperCase(Locale.ROOT);
         User referrer = userRepository.findByReferralCode(referralCode)
-                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "Invalid referral code"));
+                .orElseThrow(() -> new BadRequestException("Invalid referral code"));
 
         if (referrer.getId().equals(newUser.getId())) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "You cannot refer yourself");
+            throw new BadRequestException("You cannot refer yourself");
         }
 
         referralHistoryRepository.findByReferredUser(newUser).ifPresent(existing -> {
-            throw new ApiException(HttpStatus.CONFLICT, "This account already has a referral record");
+            throw new BadRequestException("This account already has a referral record");
         });
 
         ReferralHistory history = ReferralHistory.builder()
@@ -143,7 +142,6 @@ public class ReferralService {
         user.setReferralCode(code);
         return code;
     }
-
 
     private void reevaluateQualification(ReferralHistory history) {
         boolean qualifies = history.isEmailVerified() && history.isResumeCreated();
