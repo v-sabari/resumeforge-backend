@@ -5,8 +5,6 @@ import lombok.*;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
 
 @Entity
 @Table(name = "users")
@@ -71,20 +69,12 @@ public class User {
     @Builder.Default
     private Instant createdAt = Instant.now();
 
-    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
-    @Builder.Default
-    private List<Resume> resumes = new ArrayList<>();
-
     public String getPassword() {
         return this.passwordHash;
     }
 
     public void setPassword(String password) {
         this.passwordHash = password;
-    }
-
-    public boolean isEmailVerified() {
-        return this.emailVerified;
     }
 
     public boolean isHasCreatedResume() {

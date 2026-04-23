@@ -15,13 +15,17 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByEmail(String email);
     Optional<User> findByPasswordResetToken(String token);
     Optional<User> findByReferralCode(String referralCode);
+
     boolean existsByEmail(String email);
-    
+
+    long countByPremiumTrue();
+    long countByEmailVerifiedTrue();
+
     @Query("SELECT u FROM User u WHERE " +
-           "LOWER(u.name) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-           "LOWER(u.email) LIKE LOWER(CONCAT('%', :query, '%'))")
+            "LOWER(u.name) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+            "LOWER(u.email) LIKE LOWER(CONCAT('%', :query, '%'))")
     Page<User> searchUsers(@Param("query") String query, Pageable pageable);
-    
+
     @Query("SELECT COUNT(u) FROM User u WHERE u.referredByUserId = :userId AND u.emailVerified = true")
     long countVerifiedReferrals(@Param("userId") Long userId);
 }

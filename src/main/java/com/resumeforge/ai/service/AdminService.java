@@ -1,5 +1,5 @@
 package com.resumeforge.ai.service;
-import java.time.ZoneId;
+
 import com.resumeforge.ai.dto.*;
 import com.resumeforge.ai.entity.User;
 import com.resumeforge.ai.exception.ResourceNotFoundException;
@@ -10,6 +10,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,8 +39,8 @@ public class AdminService {
 
     public AdminStatsResponse getStats() {
         long totalUsers = userRepository.count();
-        long premiumUsers = userRepository.count();
-        long verifiedUsers = userRepository.count();
+        long premiumUsers = userRepository.countByPremiumTrue();
+        long verifiedUsers = userRepository.countByEmailVerifiedTrue();
         long totalResumes = resumeRepository.count();
         long totalPayments = paymentRepository.count();
         long pendingPayments = paymentRepository.countByStatus("PENDING");
@@ -76,10 +77,10 @@ public class AdminService {
     public ApiResponse setUserRole(Long userId, SetRoleRequest request) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        
+
         user.setRole(request.getRole());
         userRepository.save(user);
-        
+
         return ApiResponse.success("User role updated");
     }
 
@@ -87,10 +88,10 @@ public class AdminService {
     public ApiResponse togglePremium(Long userId, TogglePremiumRequest request) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        
+
         user.setPremium(request.getPremium());
         userRepository.save(user);
-        
+
         return ApiResponse.success("Premium status updated");
     }
 
@@ -100,7 +101,7 @@ public class AdminService {
 
     public Map<String, Object> getAiStats() {
         List<Object[]> featureStats = aiUsageLogRepository.getFeatureUsageStats();
-        
+
         Map<String, Object> stats = new HashMap<>();
         stats.put("totalUsage", aiUsageLogRepository.count());
         stats.put("featureBreakdown", featureStats.stream()
@@ -108,18 +109,17 @@ public class AdminService {
                         row -> (String) row[0],
                         row -> (Long) row[1]
                 )));
-        
+
         return stats;
     }
 
     public Map<String, Object> getReferralStats() {
         long totalRewards = referralRewardRepository.count();
-        long pendingRewards = referralRewardRepository.count();
-        
+
         Map<String, Object> stats = new HashMap<>();
         stats.put("totalRewards", totalRewards);
-        stats.put("pendingRewards", pendingRewards);
-        
+        stats.put("pendingRewards", 0);
+
         return stats;
     }
 

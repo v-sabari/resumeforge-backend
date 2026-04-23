@@ -7,7 +7,6 @@ import com.resumeforge.ai.exception.UnauthorizedException;
 import com.resumeforge.ai.repository.UserRepository;
 import com.resumeforge.ai.security.JwtUtil;
 import com.resumeforge.ai.util.OtpUtil;
-import com.resumeforge.ai.util.ReferralCodeUtil;
 import com.resumeforge.ai.util.TokenUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -31,6 +30,9 @@ public class AuthService {
     @Autowired
     private EmailService emailService;
 
+    @Autowired
+    private ReferralService referralService;
+
     @Transactional
     public ApiResponse register(RegisterRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
@@ -46,19 +48,14 @@ public class AuthService {
                 .emailVerified(false)
                 .emailOtp(OtpUtil.generateOtp())
                 .emailOtpExpiresAt(LocalDateTime.now().plusMinutes(10))
-                .referralCode(ReferralCodeUtil.generateReferralCode())
                 .build();
 
-        if (request.getReferralCode() != null && !request.getReferralCode().isEmpty()) {
-            User referrer = userRepository.findByReferralCode(request.getReferralCode()).orElse(null);
-            if (referrer != null) {
-                user.setReferredByUserId(referrer.getId());
-            }
-        }
+        user = userRepository.save(user);
 
-        userRepository.save(user);
+        referralService.ensureReferralCode(user);
+        referralService.attachReferralAtSignup(user, request.getReferralCode());
+
         emailService.sendVerificationEmail(user.getEmail(), user.getEmailOtp());
-
         return ApiResponse.success("Registration successful. Please check your email for OTP.");
     }
 
@@ -75,7 +72,7 @@ public class AuthService {
             throw new BadRequestException("Invalid OTP");
         }
 
-        if (user.getEmailOtpExpiresAt().isBefore(LocalDateTime.now())) {
+        if (user.getEmailOtpExpiresAt() == null || user.getEmailOtpExpiresAt().isBefore(LocalDateTime.now())) {
             throw new BadRequestException("OTP expired");
         }
 
@@ -84,8 +81,10 @@ public class AuthService {
         user.setEmailOtpExpiresAt(null);
         userRepository.save(user);
 
+        referralService.onUserEmailVerified(user);
+
         String token = jwtUtil.generateToken(user.getEmail(), user.getId());
-        
+
         return AuthResponse.builder()
                 .token(token)
                 .user(toUserResponse(user))
@@ -106,7 +105,6 @@ public class AuthService {
         userRepository.save(user);
 
         emailService.sendVerificationEmail(user.getEmail(), user.getEmailOtp());
-
         return ApiResponse.success("OTP resent successfully");
     }
 
@@ -119,7 +117,7 @@ public class AuthService {
         }
 
         String token = jwtUtil.generateToken(user.getEmail(), user.getId());
-        
+
         return AuthResponse.builder()
                 .token(token)
                 .user(toUserResponse(user))
@@ -137,7 +135,6 @@ public class AuthService {
         userRepository.save(user);
 
         emailService.sendPasswordResetEmail(user.getEmail(), resetToken);
-
         return ApiResponse.success("Password reset link sent to your email");
     }
 
@@ -146,7 +143,7 @@ public class AuthService {
         User user = userRepository.findByPasswordResetToken(request.getToken())
                 .orElseThrow(() -> new BadRequestException("Invalid or expired reset token"));
 
-        if (user.getPasswordResetExpiresAt().isBefore(LocalDateTime.now())) {
+        if (user.getPasswordResetExpiresAt() == null || user.getPasswordResetExpiresAt().isBefore(LocalDateTime.now())) {
             throw new BadRequestException("Reset token expired");
         }
 

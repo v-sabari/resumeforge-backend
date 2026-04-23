@@ -22,6 +22,7 @@ import java.util.UUID;
 
 @Service
 public class ReferralService {
+
     private static final List<Milestone> MILESTONES = List.of(
             new Milestone(1, ReferralReward.RewardType.PREMIUM_DAYS_3, "3 days Premium", Duration.ofDays(3)),
             new Milestone(3, ReferralReward.RewardType.ATS_PRO_UNLOCK, "ATS Pro Scan (unlimited)", null),
@@ -48,9 +49,9 @@ public class ReferralService {
     @Transactional
     public void attachReferralAtSignup(User newUser, String rawReferralCode) {
         ensureReferralCode(newUser);
-        userRepository.save(newUser);
 
         if (rawReferralCode == null || rawReferralCode.isBlank()) {
+            userRepository.save(newUser);
             return;
         }
 
@@ -58,13 +59,16 @@ public class ReferralService {
         User referrer = userRepository.findByReferralCode(referralCode)
                 .orElseThrow(() -> new BadRequestException("Invalid referral code"));
 
-        if (referrer.getId().equals(newUser.getId())) {
+        if (newUser.getId() != null && referrer.getId().equals(newUser.getId())) {
             throw new BadRequestException("You cannot refer yourself");
         }
 
         referralHistoryRepository.findByReferredUser(newUser).ifPresent(existing -> {
             throw new BadRequestException("This account already has a referral record");
         });
+
+        newUser.setReferredByUserId(referrer.getId());
+        userRepository.save(newUser);
 
         ReferralHistory history = ReferralHistory.builder()
                 .referrerUser(referrer)
@@ -107,15 +111,20 @@ public class ReferralService {
         reevaluateQualification(history);
     }
 
-    @Transactional
+    @Transactional(readOnly = true)
     public ReferralStatusResponse getReferralStatus(User user) {
-        String referralCode = ensureReferralCode(user);
-        userRepository.save(user);
         List<ReferralHistory> history = referralHistoryRepository.findByReferrerUserOrderByCreatedAtDesc(user);
         List<ReferralReward> rewards = referralRewardRepository.findByUserOrderByGrantedAtDesc(user);
 
-        long qualified = history.stream().filter(h -> h.getStatus() == ReferralHistory.ReferralStatus.QUALIFIED).count();
-        long pending = history.stream().filter(h -> h.getStatus() == ReferralHistory.ReferralStatus.PENDING).count();
+        long qualified = history.stream()
+                .filter(h -> h.getStatus() == ReferralHistory.ReferralStatus.QUALIFIED)
+                .count();
+
+        long pending = history.stream()
+                .filter(h -> h.getStatus() == ReferralHistory.ReferralStatus.PENDING)
+                .count();
+
+        String referralCode = user.getReferralCode();
 
         return new ReferralStatusResponse(
                 referralCode,
@@ -145,6 +154,7 @@ public class ReferralService {
 
     private void reevaluateQualification(ReferralHistory history) {
         boolean qualifies = history.isEmailVerified() && history.isResumeCreated();
+
         if (qualifies && history.getStatus() != ReferralHistory.ReferralStatus.QUALIFIED) {
             history.setStatus(ReferralHistory.ReferralStatus.QUALIFIED);
             history.setQualifiedAt(Instant.now());
@@ -157,11 +167,16 @@ public class ReferralService {
             history.setStatus(ReferralHistory.ReferralStatus.PENDING);
             history.setQualifiedAt(null);
         }
+
         referralHistoryRepository.save(history);
     }
 
     private void grantMilestoneRewardsIfNeeded(User referrer) {
-        long qualifiedReferrals = referralHistoryRepository.countByReferrerUserAndStatus(referrer, ReferralHistory.ReferralStatus.QUALIFIED);
+        long qualifiedReferrals = referralHistoryRepository.countByReferrerUserAndStatus(
+                referrer,
+                ReferralHistory.ReferralStatus.QUALIFIED
+        );
+
         for (Milestone milestone : MILESTONES) {
             if (qualifiedReferrals < milestone.count()) {
                 continue;
@@ -185,6 +200,7 @@ public class ReferralService {
                 .grantedAt(now)
                 .expiresAt(expiresAt)
                 .build();
+
         referralRewardRepository.save(reward);
 
         if (milestone.rewardType() == ReferralReward.RewardType.PREMIUM_DAYS_3 ||
@@ -222,7 +238,12 @@ public class ReferralService {
                 .sorted(Comparator.comparingInt(Milestone::count))
                 .filter(m -> qualified < m.count())
                 .findFirst();
-        return next.map(m -> new NextMilestoneResponse(m.count(), m.count() - qualified, m.description())).orElse(null);
+
+        return next.map(m -> new NextMilestoneResponse(
+                m.count(),
+                m.count() - qualified,
+                m.description()
+        )).orElse(null);
     }
 
     private String maskEmail(String email) {

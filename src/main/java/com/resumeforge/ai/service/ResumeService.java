@@ -8,7 +8,6 @@ import com.resumeforge.ai.entity.Resume;
 import com.resumeforge.ai.entity.ResumeSnapshot;
 import com.resumeforge.ai.entity.User;
 import com.resumeforge.ai.exception.ResourceNotFoundException;
-import com.resumeforge.ai.exception.UnauthorizedException;
 import com.resumeforge.ai.repository.ResumeRepository;
 import com.resumeforge.ai.repository.ResumeSnapshotRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +25,9 @@ public class ResumeService {
 
     @Autowired
     private ResumeSnapshotRepository snapshotRepository;
+
+    @Autowired
+    private ReferralService referralService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -47,6 +49,7 @@ public class ResumeService {
 
         resume = resumeRepository.save(resume);
         createSnapshot(resume);
+        referralService.onFirstResumeCreated(user);
         return toResponse(resume);
     }
 
@@ -94,7 +97,7 @@ public class ResumeService {
     }
 
     public List<SnapshotResponse> getResumeHistory(User user, Long resumeId) {
-        Resume resume = resumeRepository.findByIdAndUserId(resumeId, user.getId())
+        resumeRepository.findByIdAndUserId(resumeId, user.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Resume not found"));
 
         return snapshotRepository.findByResumeIdOrderByCreatedAtDesc(resumeId)
@@ -113,7 +116,7 @@ public class ResumeService {
 
         try {
             ResumeRequest snapshotData = objectMapper.readValue(snapshot.getSnapshotData(), ResumeRequest.class);
-            
+
             resume.setTitle(snapshotData.getTitle());
             resume.setTemplate(snapshotData.getTemplate());
             resume.setPersonalInfo(snapshotData.getPersonalInfo());
@@ -156,7 +159,6 @@ public class ResumeService {
 
             snapshotRepository.save(snapshot);
         } catch (Exception e) {
-            // Log error but don't fail the main operation
             System.err.println("Failed to create snapshot: " + e.getMessage());
         }
     }
