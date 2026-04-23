@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/referral")
 public class ReferralController {
+
     private final ReferralService referralService;
     private final UserRepository userRepository;
 
@@ -24,12 +25,26 @@ public class ReferralController {
 
     @GetMapping("/status")
     public ReferralStatusResponse status(Authentication authentication) {
-        if (authentication == null || authentication.getName() == null || authentication.getName().isBlank()) {
+        if (authentication == null || authentication.getPrincipal() == null) {
             throw new UnauthorizedException("Authentication required");
         }
 
-        User user = userRepository.findByEmail(authentication.getName())
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        Object principal = authentication.getPrincipal();
+        User user;
+
+        if (principal instanceof User authenticatedUser) {
+            user = userRepository.findById(authenticatedUser.getId())
+                    .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        } else {
+            String email = authentication.getName();
+
+            if (email == null || email.isBlank()) {
+                throw new UnauthorizedException("Authentication required");
+            }
+
+            user = userRepository.findByEmail(email)
+                    .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        }
 
         return referralService.getReferralStatus(user);
     }
