@@ -75,12 +75,14 @@ public class ReferralService {
                 .referredUser(newUser)
                 .status(ReferralHistory.ReferralStatus.PENDING)
                 .build();
+
         referralHistoryRepository.save(history);
     }
 
     @Transactional
     public void onUserEmailVerified(User user) {
         ReferralHistory history = referralHistoryRepository.findByReferredUser(user).orElse(null);
+
         if (history == null) {
             ensureReferralCode(user);
             userRepository.save(user);
@@ -94,27 +96,33 @@ public class ReferralService {
     @Transactional
     public void onFirstResumeCreated(User user) {
         boolean changed = !user.isHasCreatedResume();
+
         user.setHasCreatedResume(true);
         ensureReferralCode(user);
         userRepository.save(user);
 
-        if (!changed) {
-            return;
-        }
+        if (!changed) return;
 
         ReferralHistory history = referralHistoryRepository.findByReferredUser(user).orElse(null);
-        if (history == null) {
-            return;
-        }
+        if (history == null) return;
 
         history.setResumeCreated(true);
         reevaluateQualification(history);
     }
 
-    @Transactional(readOnly = true)
+    // ✅ FIXED METHOD
+    @Transactional
     public ReferralStatusResponse getReferralStatus(User user) {
-        List<ReferralHistory> history = referralHistoryRepository.findByReferrerUserOrderByCreatedAtDesc(user);
-        List<ReferralReward> rewards = referralRewardRepository.findByUserOrderByGrantedAtDesc(user);
+
+        // 🔥 Ensure referral code ALWAYS exists
+        String referralCode = ensureReferralCode(user);
+        userRepository.save(user);
+
+        List<ReferralHistory> history =
+                referralHistoryRepository.findByReferrerUserOrderByCreatedAtDesc(user);
+
+        List<ReferralReward> rewards =
+                referralRewardRepository.findByUserOrderByGrantedAtDesc(user);
 
         long qualified = history.stream()
                 .filter(h -> h.getStatus() == ReferralHistory.ReferralStatus.QUALIFIED)
@@ -123,8 +131,6 @@ public class ReferralService {
         long pending = history.stream()
                 .filter(h -> h.getStatus() == ReferralHistory.ReferralStatus.PENDING)
                 .count();
-
-        String referralCode = user.getReferralCode();
 
         return new ReferralStatusResponse(
                 referralCode,
@@ -145,7 +151,11 @@ public class ReferralService {
 
         String code;
         do {
-            code = UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase(Locale.ROOT);
+            code = UUID.randomUUID()
+                    .toString()
+                    .replace("-", "")
+                    .substring(0, 8)
+                    .toUpperCase(Locale.ROOT);
         } while (userRepository.findByReferralCode(code).isPresent());
 
         user.setReferralCode(code);
@@ -178,12 +188,12 @@ public class ReferralService {
         );
 
         for (Milestone milestone : MILESTONES) {
-            if (qualifiedReferrals < milestone.count()) {
-                continue;
-            }
-            if (referralRewardRepository.findByUserAndMilestoneCount(referrer, milestone.count()).isPresent()) {
-                continue;
-            }
+            if (qualifiedReferrals < milestone.count()) continue;
+
+            if (referralRewardRepository
+                    .findByUserAndMilestoneCount(referrer, milestone.count())
+                    .isPresent()) continue;
+
             grantReward(referrer, milestone);
         }
     }
@@ -205,9 +215,12 @@ public class ReferralService {
 
         if (milestone.rewardType() == ReferralReward.RewardType.PREMIUM_DAYS_3 ||
                 milestone.rewardType() == ReferralReward.RewardType.PREMIUM_DAYS_30) {
+
             referrer.setPremium(true);
+
             Instant currentExpiry = referrer.getPremiumExpiresAt();
-            Instant base = currentExpiry != null && currentExpiry.isAfter(now) ? currentExpiry : now;
+            Instant base = (currentExpiry != null && currentExpiry.isAfter(now)) ? currentExpiry : now;
+
             referrer.setPremiumExpiresAt(base.plus(milestone.duration()));
             userRepository.save(referrer);
         }
@@ -247,23 +260,19 @@ public class ReferralService {
     }
 
     private String maskEmail(String email) {
-        if (email == null || email.isBlank()) {
-            return "hidden";
-        }
+        if (email == null || email.isBlank()) return "hidden";
+
         int at = email.indexOf('@');
-        if (at <= 1) {
-            return "***" + email.substring(Math.max(at, 0));
-        }
+        if (at <= 1) return "***" + email.substring(Math.max(at, 0));
+
         String local = email.substring(0, at);
         String domain = email.substring(at);
-        String masked = local.charAt(0) + "***" + local.charAt(local.length() - 1);
-        return masked + domain;
+
+        return local.charAt(0) + "***" + local.charAt(local.length() - 1) + domain;
     }
 
     private String trimTrailingSlash(String url) {
-        if (url == null || url.isBlank()) {
-            return "https://resumeforgeai.site";
-        }
+        if (url == null || url.isBlank()) return "https://resumeforgeai.site";
         return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
     }
 
