@@ -13,6 +13,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 
 @Service
@@ -108,12 +109,22 @@ public class AuthService {
         return ApiResponse.success("OTP resent successfully");
     }
 
+    // B1 FIX: Unverified users are now blocked at login.
+    // Previously a JWT was issued regardless of email verification status,
+    // allowing unverified accounts full API access.
     public AuthResponse login(AuthRequest request) {
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new UnauthorizedException("Invalid email or password"));
 
+        // Password check first — prevents account-existence enumeration via the
+        // "not verified" error message (attacker cannot distinguish bad password
+        // from unverified account without first knowing the correct password).
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
             throw new UnauthorizedException("Invalid email or password");
+        }
+
+        if (!user.isEmailVerified()) {
+            throw new UnauthorizedException("Email not verified. Please check your inbox for the OTP.");
         }
 
         String token = jwtUtil.generateToken(user.getEmail(), user.getId());
@@ -138,6 +149,10 @@ public class AuthService {
         return ApiResponse.success("Password reset link sent to your email");
     }
 
+    // B3 FIX: Stamp tokenIssuedAt after every password reset.
+    // JwtAuthenticationFilter rejects any token whose iat is before this watermark,
+    // so tokens issued before the reset are invalidated immediately without needing
+    // a blocklist or waiting up to 24 h for old tokens to expire naturally.
     @Transactional
     public ApiResponse resetPassword(ResetPasswordRequest request) {
         User user = userRepository.findByPasswordResetToken(request.getToken())
@@ -150,6 +165,7 @@ public class AuthService {
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
         user.setPasswordResetToken(null);
         user.setPasswordResetExpiresAt(null);
+        user.setTokenIssuedAt(Instant.now());   // invalidates all prior JWTs
         userRepository.save(user);
 
         return ApiResponse.success("Password reset successful");

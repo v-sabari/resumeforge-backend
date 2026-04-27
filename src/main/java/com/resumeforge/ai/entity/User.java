@@ -69,6 +69,15 @@ public class User {
     @Builder.Default
     private Instant createdAt = Instant.now();
 
+    /**
+     * Stamped whenever a security-sensitive action invalidates prior sessions
+     * (password reset, future: forced logout). Any JWT whose iat claim is before
+     * this value is rejected in JwtAuthenticationFilter, even if its signature
+     * and expiry are valid.
+     */
+    @Column(name = "token_issued_at")
+    private Instant tokenIssuedAt;
+
     public String getPassword() {
         return this.passwordHash;
     }

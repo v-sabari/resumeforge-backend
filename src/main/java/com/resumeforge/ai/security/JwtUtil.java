@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -52,6 +53,16 @@ public class JwtUtil {
 
     public Date extractExpiration(String token) {
         return extractClaim(token, Claims::getExpiration);
+    }
+
+    /**
+     * Returns the iat (issued-at) timestamp embedded in the token.
+     * Used by JwtAuthenticationFilter to reject tokens issued before
+     * the user's tokenIssuedAt watermark (e.g. after a password reset).
+     */
+    public Instant extractIssuedAt(String token) {
+        Date iat = extractClaim(token, Claims::getIssuedAt);
+        return iat != null ? iat.toInstant() : Instant.EPOCH;
     }
 
     public <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {

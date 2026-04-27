@@ -6,6 +6,8 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -15,10 +17,13 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.Collections;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+
+    private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
 
     @Autowired
     private JwtUtil jwtUtil;
@@ -49,6 +54,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 User user = userRepository.findByEmail(email).orElse(null);
 
                 if (user != null && jwtUtil.validateToken(jwt, email)) {
+
+                    // B3 fix: reject tokens issued before the user's security watermark.
+                    // tokenIssuedAt is stamped on password reset (and any future forced-logout).
+                    // A null watermark means no invalidation has occurred — token is accepted.
+                    Instant tokenIat = jwtUtil.extractIssuedAt(jwt);
+                    Instant watermark = user.getTokenIssuedAt();
+
+                    if (watermark != null && tokenIat.isBefore(watermark)) {
+                        log.warn("Rejected token for user={} — issued at {} which is before watermark {}",
+                                email, tokenIat, watermark);
+                        filterChain.doFilter(request, response);
+                        return;
+                    }
+
                     UsernamePasswordAuthenticationToken authToken =
                             new UsernamePasswordAuthenticationToken(
                                     user,
@@ -62,8 +81,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     SecurityContextHolder.getContext().setAuthentication(authToken);
                 }
             }
-        } catch (Exception ignored) {
-            // Invalid token: continue without authentication
+        } catch (Exception e) {
+            // B4 fix (logged here rather than silently ignored — full fix in B4 task)
+            log.debug("JWT validation failed for request {}: {}", request.getRequestURI(), e.getMessage());
         }
 
         filterChain.doFilter(request, response);
