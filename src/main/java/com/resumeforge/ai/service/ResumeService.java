@@ -10,6 +10,8 @@ import com.resumeforge.ai.entity.User;
 import com.resumeforge.ai.exception.ResourceNotFoundException;
 import com.resumeforge.ai.repository.ResumeRepository;
 import com.resumeforge.ai.repository.ResumeSnapshotRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +21,9 @@ import java.util.stream.Collectors;
 
 @Service
 public class ResumeService {
+
+    // B9 FIX: proper logger replaces System.err.println
+    private static final Logger log = LoggerFactory.getLogger(ResumeService.class);
 
     @Autowired
     private ResumeRepository resumeRepository;
@@ -158,8 +163,12 @@ public class ResumeService {
                     .build();
 
             snapshotRepository.save(snapshot);
+
         } catch (Exception e) {
-            System.err.println("Failed to create snapshot: " + e.getMessage());
+            // B9 FIX: was System.err.println — now properly logged via slf4j.
+            // ERROR level because a missed snapshot means history will be silently
+            // incomplete, which is a data-integrity issue worth alerting on.
+            log.error("Failed to create snapshot for resumeId={}: {}", resume.getId(), e.getMessage(), e);
         }
     }
 

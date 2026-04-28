@@ -2,6 +2,10 @@ package com.resumeforge.ai.security;
 
 import com.resumeforge.ai.entity.User;
 import com.resumeforge.ai.repository.UserRepository;
+import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.MalformedJwtException;
+import io.jsonwebtoken.UnsupportedJwtException;
+import io.jsonwebtoken.security.SecurityException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -81,9 +85,30 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     SecurityContextHolder.getContext().setAuthentication(authToken);
                 }
             }
+
+            // B4 FIX: replace single catch(Exception e) with specific exception types
+            // so each failure reason is clearly identifiable in logs at the right severity.
+
+        } catch (ExpiredJwtException e) {
+            // Normal — token aged out. DEBUG to avoid flooding logs.
+            log.debug("Expired JWT on {}: {}", request.getRequestURI(), e.getMessage());
+
+        } catch (SecurityException | MalformedJwtException e) {
+            // Tampered signature or structurally broken token — worth investigating.
+            log.warn("Invalid JWT signature or structure on {}: {}", request.getRequestURI(), e.getMessage());
+
+        } catch (UnsupportedJwtException e) {
+            // Wrong algorithm or token type — likely a misconfigured client.
+            log.warn("Unsupported JWT on {}: {}", request.getRequestURI(), e.getMessage());
+
+        } catch (IllegalArgumentException e) {
+            // Empty or null token string — malformed Authorization header.
+            log.warn("Blank or null JWT on {}: {}", request.getRequestURI(), e.getMessage());
+
         } catch (Exception e) {
-            // B4 fix (logged here rather than silently ignored — full fix in B4 task)
-            log.debug("JWT validation failed for request {}: {}", request.getRequestURI(), e.getMessage());
+            // Unexpected failure (e.g. DB error while loading user). ERROR because
+            // this is not a normal token rejection path — should be investigated.
+            log.error("Unexpected error during JWT authentication on {}", request.getRequestURI(), e);
         }
 
         filterChain.doFilter(request, response);

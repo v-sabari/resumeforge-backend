@@ -10,6 +10,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.concurrent.CompletableFuture;
+
 @RestController
 @RequestMapping("/api/ai")
 public class AiController {
@@ -18,72 +20,82 @@ public class AiController {
     private AiService aiService;
 
     @PostMapping("/rewrite")
-    public ResponseEntity<AiResponse> rewrite(
+    public CompletableFuture<ResponseEntity<AiResponse>> rewrite(
             @AuthenticationPrincipal User user,
             @Valid @RequestBody AiRequest request) {
-        return ResponseEntity.ok(aiService.rewriteContent(user, request));
+        return aiService.rewriteContent(user, request)
+                .thenApply(ResponseEntity::ok);
     }
 
     @PostMapping("/bullets")
-    public ResponseEntity<AiResponse> improveBullets(
+    public CompletableFuture<ResponseEntity<AiResponse>> improveBullets(
             @AuthenticationPrincipal User user,
             @Valid @RequestBody AiRequest request) {
-        return ResponseEntity.ok(aiService.improveBullets(user, request));
+        return aiService.improveBullets(user, request)
+                .thenApply(ResponseEntity::ok);
     }
 
     @PostMapping("/summary")
-    public ResponseEntity<AiResponse> generateSummary(
+    public CompletableFuture<ResponseEntity<AiResponse>> generateSummary(
             @AuthenticationPrincipal User user,
             @Valid @RequestBody AiRequest request) {
-        return ResponseEntity.ok(aiService.generateSummary(user, request));
+        return aiService.generateSummary(user, request)
+                .thenApply(ResponseEntity::ok);
     }
 
     @PostMapping("/skills")
-    public ResponseEntity<AiResponse> extractSkills(
+    public CompletableFuture<ResponseEntity<AiResponse>> extractSkills(
             @AuthenticationPrincipal User user,
             @Valid @RequestBody AiRequest request) {
-        return ResponseEntity.ok(aiService.extractSkills(user, request));
+        return aiService.extractSkills(user, request)
+                .thenApply(ResponseEntity::ok);
     }
 
     @PostMapping("/tailor")
-    public ResponseEntity<AiResponse> tailorToJob(
+    public CompletableFuture<ResponseEntity<AiResponse>> tailorToJob(
             @AuthenticationPrincipal User user,
             @Valid @RequestBody AiRequest request) {
-        return ResponseEntity.ok(aiService.tailorToJob(user, request));
+        return aiService.tailorToJob(user, request)
+                .thenApply(ResponseEntity::ok);
     }
 
     @PostMapping("/ats-score")
-    public ResponseEntity<AiResponse> atsScore(
+    public CompletableFuture<ResponseEntity<AiResponse>> atsScore(
             @AuthenticationPrincipal User user,
             @Valid @RequestBody AiRequest request) {
-        return ResponseEntity.ok(aiService.atsScore(user, request));
+        return aiService.atsScore(user, request)
+                .thenApply(ResponseEntity::ok);
     }
 
     @PostMapping("/cover-letter")
-    public ResponseEntity<AiResponse> generateCoverLetter(
+    public CompletableFuture<ResponseEntity<AiResponse>> generateCoverLetter(
             @AuthenticationPrincipal User user,
             @Valid @RequestBody AiRequest request) {
-        return ResponseEntity.ok(aiService.generateCoverLetter(user, request));
+        return aiService.generateCoverLetter(user, request)
+                .thenApply(ResponseEntity::ok);
     }
 
     @PostMapping("/linkedin")
-    public ResponseEntity<AiResponse> optimizeLinkedIn(
+    public CompletableFuture<ResponseEntity<AiResponse>> optimizeLinkedIn(
             @AuthenticationPrincipal User user,
             @Valid @RequestBody AiRequest request) {
-        return ResponseEntity.ok(aiService.optimizeLinkedIn(user, request));
+        return aiService.optimizeLinkedIn(user, request)
+                .thenApply(ResponseEntity::ok);
     }
 
     @PostMapping("/grammar-check")
-    public ResponseEntity<AiResponse> checkGrammar(
+    public CompletableFuture<ResponseEntity<AiResponse>> checkGrammar(
             @AuthenticationPrincipal User user,
             @Valid @RequestBody AiRequest request) {
-        return ResponseEntity.ok(aiService.checkGrammar(user, request));
+        return aiService.checkGrammar(user, request)
+                .thenApply(ResponseEntity::ok);
     }
 
     @PostMapping("/interview-prep")
-    public ResponseEntity<AiResponse> generateInterviewPrep(
+    public CompletableFuture<ResponseEntity<AiResponse>> generateInterviewPrep(
             @AuthenticationPrincipal User user,
             @Valid @RequestBody AiRequest request) {
-        return ResponseEntity.ok(aiService.generateInterviewPrep(user, request));
+        return aiService.generateInterviewPrep(user, request)
+                .thenApply(ResponseEntity::ok);
     }
 }

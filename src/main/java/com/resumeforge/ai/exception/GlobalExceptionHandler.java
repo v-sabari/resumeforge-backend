@@ -51,6 +51,14 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.error("Authentication failed"));
     }
 
+    // B6 FIX: return 429 Too Many Requests for rate limit violations
+    @ExceptionHandler(RateLimitException.class)
+    public ResponseEntity<ApiResponse> handleRateLimit(RateLimitException ex) {
+        return ResponseEntity
+                .status(HttpStatus.TOO_MANY_REQUESTS)
+                .body(ApiResponse.error(ex.getMessage()));
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidationErrors(MethodArgumentNotValidException ex) {
         Map<String, String> errors = new HashMap<>();
