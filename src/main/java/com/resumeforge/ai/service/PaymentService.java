@@ -111,6 +111,19 @@ public class PaymentService {
         payment.setStatus("COMPLETED");
         paymentRepository.save(payment);
 
+        // Activate premium immediately — don't wait for webhook
+        User dbUser = userRepository.findById(payment.getUserId())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        dbUser.setPremium(true);
+        userRepository.save(dbUser);
+
+        // Send invoice if not already sent
+        if (!payment.isInvoiceSent()) {
+            emailService.sendInvoiceEmail(dbUser.getEmail(), payment);
+            payment.setInvoiceSent(true);
+            paymentRepository.save(payment);
+        }
+
         return ApiResponse.success("Payment verified successfully");
     }
 
