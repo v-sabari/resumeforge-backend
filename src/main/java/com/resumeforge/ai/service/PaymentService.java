@@ -1,5 +1,8 @@
 package com.resumeforge.ai.service;
 
+import com.razorpay.Order;
+import com.razorpay.RazorpayClient;
+import com.razorpay.RazorpayException;
 import com.resumeforge.ai.dto.*;
 import com.resumeforge.ai.entity.Payment;
 import com.resumeforge.ai.entity.User;
@@ -8,6 +11,7 @@ import com.resumeforge.ai.exception.ResourceNotFoundException;
 import com.resumeforge.ai.repository.PaymentRepository;
 import com.resumeforge.ai.repository.UserRepository;
 import org.apache.commons.codec.digest.HmacUtils;
+import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
@@ -44,27 +48,42 @@ public class PaymentService {
 
     @Transactional
     public Map<String, Object> createPaymentOrder(User user, PaymentCreateRequest request) {
-        BigDecimal amount = request.getAmount() != null ? request.getAmount() : new BigDecimal("99.00");
+        try {
+            RazorpayClient client = new RazorpayClient(razorpayKeyId, razorpayKeySecret);
 
-        String orderId = "order_" + System.currentTimeMillis() + "_" + user.getId();
+            BigDecimal amount = request.getAmount() != null
+                    ? request.getAmount()
+                    : new BigDecimal("99.00");
 
-        Payment payment = Payment.builder()
-                .userId(user.getId())
-                .razorpayOrderId(orderId)
-                .amount(amount)
-                .currency("INR")
-                .status("PENDING")
-                .build();
+            JSONObject orderRequest = new JSONObject();
+            orderRequest.put("amount", amount.multiply(new BigDecimal("100")).intValue());
+            orderRequest.put("currency", "INR");
+            orderRequest.put("receipt", "rcpt_" + System.currentTimeMillis());
+            orderRequest.put("payment_capture", 1);
 
-        paymentRepository.save(payment);
+            Order order = client.orders.create(orderRequest);
+            String razorpayOrderId = order.get("id");
 
-        Map<String, Object> response = new HashMap<>();
-        response.put("orderId", orderId);
-        response.put("amount", amount.multiply(new BigDecimal("100")).intValue());
-        response.put("currency", "INR");
-        response.put("keyId", razorpayKeyId);
+            Payment payment = Payment.builder()
+                    .userId(user.getId())
+                    .razorpayOrderId(razorpayOrderId)
+                    .amount(amount)
+                    .currency("INR")
+                    .status("PENDING")
+                    .build();
 
-        return response;
+            paymentRepository.save(payment);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("orderId", razorpayOrderId);
+            response.put("amount", amount.multiply(new BigDecimal("100")).intValue());
+            response.put("currency", "INR");
+            response.put("keyId", razorpayKeyId);
+            return response;
+
+        } catch (RazorpayException e) {
+            throw new RuntimeException("Failed to create Razorpay order: " + e.getMessage());
+        }
     }
 
     @Transactional
