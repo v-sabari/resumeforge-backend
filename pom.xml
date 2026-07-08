@@ -1,0 +1,329 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- ── Spring Boot parent ────────────────────────────────────────────── -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.2.5</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.resumeforge</groupId>
+    <artifactId>resumeforge-ai</artifactId>
+    <version>1.0.0</version>
+    <name>ResumeForge AI Backend</name>
+    <description>Resume generation and export API</description>
+    <packaging>jar</packaging>
+
+    <properties>
+        <java.version>21</java.version>
+        <!-- Library versions pinned for reproducible builds -->
+        <pdfbox.version>3.0.2</pdfbox.version>
+        <poi.version>5.2.5</poi.version>
+        <jjwt.version>0.12.5</jjwt.version>
+        <razorpay.version>1.4.5</razorpay.version>
+        <commons-codec.version>1.17.0</commons-codec.version>
+        <!--
+            FIX: Lombok version must be declared explicitly here.
+
+            Root cause of "version can neither be null, empty nor blank":
+            The Spring Boot parent BOM manages Lombok's version inside
+            <dependencyManagement>, which applies to <dependencies> blocks only.
+            It does NOT apply to <annotationProcessorPaths><path> entries —
+            those are resolved independently by maven-compiler-plugin BEFORE
+            the BOM is consulted for annotation processors.
+
+            Spring Boot 3.2.5 manages Lombok at 1.18.32.
+            We declare it here as a property so both the <dependency> entry
+            (which could rely on BOM but is now explicit) and the
+            <annotationProcessorPath> entry always use the exact same version,
+            making it impossible for them to drift apart.
+        -->
+        <lombok.version>1.18.32</lombok.version>
+    </properties>
+
+    <dependencies>
+
+        <!-- ── Spring Boot starters ─────────────────────────────────────── -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
+        <!-- ── Database ──────────────────────────────────────────────────── -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- ── Flyway migrations ─────────────────────────────────────────── -->
+        <!--
+            Spring Boot 3.2.5 manages Flyway at version 9.22.3.
+            In Flyway 9.x, PostgreSQL dialect support is built directly into
+            flyway-core — there is NO separate flyway-database-postgresql artifact
+            in the 9.x line. That artifact was introduced in Flyway 10.0 as part
+            of a modular split.
+
+            ROOT CAUSE OF BUILD FAILURE:
+            The original pom.xml included flyway-database-postgresql without a
+            <version> tag. Because Spring Boot 3.2.5's BOM has no entry for this
+            artifact (it does not exist in Flyway 9.x), Maven cannot resolve the
+            version and fails with:
+              "dependencies.dependency.version for
+               org.flywaydb:flyway-database-postgresql:jar is missing"
+
+            FIX: Remove flyway-database-postgresql entirely.
+            flyway-core alone is sufficient for PostgreSQL on Flyway 9.x.
+
+            If you later upgrade Spring Boot to 3.3+ (which ships with Flyway 10+),
+            add back:
+              <dependency>
+                  <groupId>org.flywaydb</groupId>
+                  <artifactId>flyway-database-postgresql</artifactId>
+              </dependency>
+            At that point the Spring Boot BOM will manage the version automatically.
+        -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <!-- flyway-database-postgresql REMOVED — does not exist in Flyway 9.x -->
+
+        <!-- ── JWT ───────────────────────────────────────────────────────── -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>${jjwt.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>${jjwt.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>${jjwt.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- ── PDF generation (Apache PDFBox 3.x) ───────────────────────── -->
+        <!--
+             FONT PACKAGING NOTE (BUILDER-02 root cause):
+             DejaVuSans.ttf and DejaVuSans-Bold.ttf MUST exist at:
+               src/main/resources/fonts/DejaVuSans.ttf
+               src/main/resources/fonts/DejaVuSans-Bold.ttf
+
+             The default Maven resource plugin copies everything under
+             src/main/resources/** into the JAR root automatically —
+             no additional <resource> configuration is required.
+
+             Verify after build:
+               jar tf target/resumeforge-ai-*.jar | grep fonts/
+             Expected output:
+               fonts/DejaVuSans.ttf
+               fonts/DejaVuSans-Bold.ttf
+        -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>${pdfbox.version}</version>
+        </dependency>
+
+        <!-- ── DOCX generation (Apache POI) ────────────────────────────── -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi</artifactId>
+            <version>${poi.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>${poi.version}</version>
+        </dependency>
+        <!--
+            poi-ooxml depends on poi-ooxml-schemas / xmlbeans.
+            Declaring poi-ooxml is sufficient; transitive deps are resolved
+            automatically by Maven.
+        -->
+
+        <!-- ── Razorpay payment gateway ─────────────────────────────────── -->
+        <dependency>
+            <groupId>com.razorpay</groupId>
+            <artifactId>razorpay-java</artifactId>
+            <version>${razorpay.version}</version>
+        </dependency>
+
+        <!-- ── Apache Commons Codec (HMAC for Razorpay webhook) ─────────── -->
+        <dependency>
+            <groupId>commons-codec</groupId>
+            <artifactId>commons-codec</artifactId>
+            <version>${commons-codec.version}</version>
+        </dependency>
+
+        <!-- ── Lombok ────────────────────────────────────────────────────── -->
+        <!--
+            Version declared explicitly via ${lombok.version} property.
+            The BOM manages this in <dependencyManagement> but being explicit
+            ensures it matches the annotationProcessorPath entry below exactly.
+        -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>${lombok.version}</version>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- ── Jackson (already on classpath via spring-boot-starter-web,  -->
+        <!--   listed explicitly for clarity and version control)           -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
+        <!-- ── Spring Retry ──────────────────────────────────────────────── -->
+        <!--
+            AI-01 FIX: Required for RetryTemplate used in AiService.callOpenRouter()
+            to retry transient OpenRouter 5xx / network failures.
+
+            NOTE: We use RetryTemplate PROGRAMMATICALLY (not @Retryable annotation)
+            because callOpenRouter is a private method called within the same bean.
+            Spring AOP proxies only intercept calls that go through the proxy
+            (i.e. calls from outside the bean). A private self-call bypasses the
+            proxy entirely, making @Retryable silently do nothing.
+            RetryTemplate invoked directly inside the method works correctly.
+
+            Spring Boot 3.2.5 BOM manages spring-retry — no version needed.
+        -->
+        <dependency>
+            <groupId>org.springframework.retry</groupId>
+            <artifactId>spring-retry</artifactId>
+        </dependency>
+        <!--
+            spring-retry requires spring-aspects for @EnableRetry AOP support.
+            Without this, @EnableRetry on AsyncConfig compiles but throws a
+            ClassNotFoundException at startup.
+        -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-aspects</artifactId>
+        </dependency>
+
+        <!-- ── Test ──────────────────────────────────────────────────────── -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+    </dependencies>
+
+    <build>
+        <plugins>
+
+            <!-- Spring Boot fat-JAR builder -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <!-- Exclude Lombok from the fat JAR at runtime -->
+                    <excludes>
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+
+            <!-- Compiler — Java 21, enable Lombok annotation processing -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <source>${java.version}</source>
+                    <target>${java.version}</target>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <!--
+                                FIX: <version> is REQUIRED here.
+                                The Spring Boot BOM does not apply to
+                                <annotationProcessorPaths> entries. Without this
+                                tag, maven-compiler-plugin throws:
+                                "version can neither be null, empty nor blank"
+                            -->
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+
+            <!--
+                RENDER DEPLOYMENT NOTE:
+                Render runs `mvn package -DskipTests` by default.
+                The spring-boot-maven-plugin creates an executable JAR at:
+                  target/resumeforge-ai-1.0.0.jar
+                Set Render start command to:
+                  java -jar target/resumeforge-ai-1.0.0.jar
+                OR use:
+                  java -Xmx256m -jar target/resumeforge-ai-1.0.0.jar
+                on Render's free tier (512 MB RAM limit).
+
+                Font files are bundled in the JAR automatically because Maven
+                copies everything under src/main/resources to the classpath.
+                NO extra Render configuration is required for fonts.
+            -->
+
+        </plugins>
+
+        <!--
+            Explicit resource configuration to guarantee fonts/ directory
+            is always included — belt-and-suspenders for any custom Maven
+            config that might restrict the default resource set.
+        -->
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <includes>
+                    <include>**/*</include>
+                </includes>
+            </resource>
+        </resources>
+
+    </build>
+
+</project>
