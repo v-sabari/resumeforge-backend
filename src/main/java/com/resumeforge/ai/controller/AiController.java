@@ -14,8 +14,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.concurrent.CompletableFuture;
-
 /**
  * AI-01 FIX — AiController improvements:
  *
@@ -23,19 +21,29 @@ import java.util.concurrent.CompletableFuture;
  *    injected null for @AuthenticationPrincipal, we now return 401 immediately
  *    instead of NPE → 500.
  *
- * 2. handle() correctly extracts AiException.ErrorCode from the async
- *    CompletableFuture so the structured errorCode field reaches the client.
- *    Previously all async failures were mapped to 500 with no errorCode.
+ * 2. handle() correctly extracts AiException.ErrorCode so the structured
+ *    errorCode field reaches the client instead of a generic 500.
  *
  * AI-02 FIX:
- * 3. handle() now takes a {@code CompletableFuture<JsonNode>} instead of
- *    {@code CompletableFuture<AiResponse>}. AiService no longer wraps the
- *    model's structured output in the old flat {result, inputTokens,
- *    outputTokens} DTO — it returns the parsed, feature-specific JSON
- *    (e.g. {items:[...]}, {score, grade, ...}) straight through. Spring's
- *    default Jackson message converter serializes a JsonNode natively, so
- *    the client receives exactly the shape aiService.js / AIActionPanel.jsx
- *    expect.
+ * 3. handle() takes the parsed {@link JsonNode} straight from AiService
+ *    (which no longer wraps the model's structured output in the old flat
+ *    {result, inputTokens, outputTokens} DTO) and returns it directly.
+ *    Spring's default Jackson message converter serializes a JsonNode
+ *    natively, so the client receives exactly the shape aiService.js /
+ *    AIActionPanel.jsx expect.
+ *
+ * AI-03 FIX — synchronous conversion:
+ * 4. Every endpoint here used to be @Async + CompletableFuture, which meant
+ *    each request needed a *second* Spring Security authorization check on
+ *    the follow-up "async dispatch" that finally wrote the response. Live
+ *    testing showed genuine, correctly-authenticated requests occasionally
+ *    coming back a hard 401 on exactly these endpoints — and only these
+ *    endpoints; every synchronous controller in this app has been
+ *    completely reliable. AiService's methods are now plain synchronous
+ *    calls, so these controller methods are too: one dispatch, one
+ *    authorization check, on the thread that was already authenticated
+ *    when the request came in. No second dispatch means no race for
+ *    Spring Security's context propagation to lose.
  */
 @RestController
 @RequestMapping("/api/ai")
@@ -44,45 +52,41 @@ public class AiController {
     @Autowired
     private AiService aiService;
 
-    private CompletableFuture<ResponseEntity<Object>> handle(
-            CompletableFuture<JsonNode> future) {
+    /**
+     * Runs the given AiService call and maps any exception it throws to the
+     * correct HTTP status + structured ApiResponse body. Synchronous now —
+     * no CompletableFuture, no second dispatch.
+     */
+    private ResponseEntity<Object> handle(java.util.function.Supplier<JsonNode> call) {
+        try {
+            return ResponseEntity.ok((Object) call.get());
 
-        return future.handle((result, ex) -> {
-            if (ex == null) {
-                return ResponseEntity.ok((Object) result);
-            }
+        } catch (AiException aie) {
+            HttpStatus status = switch (aie.getErrorCode()) {
+                case OPENROUTER_AUTH_ERROR     -> HttpStatus.BAD_GATEWAY;
+                case OPENROUTER_FORBIDDEN      -> HttpStatus.BAD_GATEWAY;
+                case OPENROUTER_RATE_LIMIT     -> HttpStatus.TOO_MANY_REQUESTS;
+                case OPENROUTER_UNAVAILABLE    -> HttpStatus.SERVICE_UNAVAILABLE;
+                case OPENROUTER_EMPTY_RESPONSE -> HttpStatus.BAD_GATEWAY;
+                case AI_SERVICE_ERROR          -> HttpStatus.INTERNAL_SERVER_ERROR;
+            };
+            return ResponseEntity
+                    .status(status)
+                    .<Object>body(ApiResponse.error(
+                            aie.getMessage(),
+                            aie.getErrorCode().name()));
 
-            Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+        } catch (RateLimitException rle) {
+            return ResponseEntity
+                    .status(HttpStatus.TOO_MANY_REQUESTS)
+                    .<Object>body(ApiResponse.error(rle.getMessage()));
 
-            if (cause instanceof AiException aie) {
-                HttpStatus status = switch (aie.getErrorCode()) {
-                    case OPENROUTER_AUTH_ERROR     -> HttpStatus.BAD_GATEWAY;
-                    case OPENROUTER_FORBIDDEN      -> HttpStatus.BAD_GATEWAY;
-                    case OPENROUTER_RATE_LIMIT     -> HttpStatus.TOO_MANY_REQUESTS;
-                    case OPENROUTER_UNAVAILABLE    -> HttpStatus.SERVICE_UNAVAILABLE;
-                    case OPENROUTER_EMPTY_RESPONSE -> HttpStatus.BAD_GATEWAY;
-                    case AI_SERVICE_ERROR          -> HttpStatus.INTERNAL_SERVER_ERROR;
-                };
-                return ResponseEntity
-                        .status(status)
-                        .<Object>body(ApiResponse.error(
-                                aie.getMessage(),
-                                aie.getErrorCode().name()));
-            }
-
-            if (cause instanceof RateLimitException rle) {
-                return ResponseEntity
-                        .status(HttpStatus.TOO_MANY_REQUESTS)
-                        .<Object>body(ApiResponse.error(rle.getMessage()));
-            }
-
+        } catch (Exception ex) {
             return ResponseEntity
                     .status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .<Object>body(ApiResponse.error(
-                            cause.getMessage() != null
-                                    ? cause.getMessage()
-                                    : "AI service error"));
-        });
+                            ex.getMessage() != null ? ex.getMessage() : "AI service error"));
+        }
     }
 
     private ResponseEntity<Object> rejectIfUnauthenticated(User user) {
@@ -99,92 +103,92 @@ public class AiController {
     // ── Endpoints ─────────────────────────────────────────────────────────────
 
     @PostMapping("/rewrite")
-    public CompletableFuture<ResponseEntity<Object>> rewrite(
+    public ResponseEntity<Object> rewrite(
             @AuthenticationPrincipal User user,
             @Valid @RequestBody AiRequest request) {
         ResponseEntity<Object> guard = rejectIfUnauthenticated(user);
-        if (guard != null) return CompletableFuture.completedFuture(guard);
-        return handle(aiService.rewriteContent(user, request));
+        if (guard != null) return guard;
+        return handle(() -> aiService.rewriteContent(user, request));
     }
 
     @PostMapping("/bullets")
-    public CompletableFuture<ResponseEntity<Object>> improveBullets(
+    public ResponseEntity<Object> improveBullets(
             @AuthenticationPrincipal User user,
             @Valid @RequestBody AiRequest request) {
         ResponseEntity<Object> guard = rejectIfUnauthenticated(user);
-        if (guard != null) return CompletableFuture.completedFuture(guard);
-        return handle(aiService.improveBullets(user, request));
+        if (guard != null) return guard;
+        return handle(() -> aiService.improveBullets(user, request));
     }
 
     @PostMapping("/summary")
-    public CompletableFuture<ResponseEntity<Object>> generateSummary(
+    public ResponseEntity<Object> generateSummary(
             @AuthenticationPrincipal User user,
             @Valid @RequestBody AiRequest request) {
         ResponseEntity<Object> guard = rejectIfUnauthenticated(user);
-        if (guard != null) return CompletableFuture.completedFuture(guard);
-        return handle(aiService.generateSummary(user, request));
+        if (guard != null) return guard;
+        return handle(() -> aiService.generateSummary(user, request));
     }
 
     @PostMapping("/skills")
-    public CompletableFuture<ResponseEntity<Object>> extractSkills(
+    public ResponseEntity<Object> extractSkills(
             @AuthenticationPrincipal User user,
             @Valid @RequestBody AiRequest request) {
         ResponseEntity<Object> guard = rejectIfUnauthenticated(user);
-        if (guard != null) return CompletableFuture.completedFuture(guard);
-        return handle(aiService.extractSkills(user, request));
+        if (guard != null) return guard;
+        return handle(() -> aiService.extractSkills(user, request));
     }
 
     @PostMapping("/tailor")
-    public CompletableFuture<ResponseEntity<Object>> tailorToJob(
+    public ResponseEntity<Object> tailorToJob(
             @AuthenticationPrincipal User user,
             @Valid @RequestBody AiRequest request) {
         ResponseEntity<Object> guard = rejectIfUnauthenticated(user);
-        if (guard != null) return CompletableFuture.completedFuture(guard);
-        return handle(aiService.tailorToJob(user, request));
+        if (guard != null) return guard;
+        return handle(() -> aiService.tailorToJob(user, request));
     }
 
     @PostMapping("/ats-score")
-    public CompletableFuture<ResponseEntity<Object>> atsScore(
+    public ResponseEntity<Object> atsScore(
             @AuthenticationPrincipal User user,
             @Valid @RequestBody AiRequest request) {
         ResponseEntity<Object> guard = rejectIfUnauthenticated(user);
-        if (guard != null) return CompletableFuture.completedFuture(guard);
-        return handle(aiService.atsScore(user, request));
+        if (guard != null) return guard;
+        return handle(() -> aiService.atsScore(user, request));
     }
 
     @PostMapping("/cover-letter")
-    public CompletableFuture<ResponseEntity<Object>> generateCoverLetter(
+    public ResponseEntity<Object> generateCoverLetter(
             @AuthenticationPrincipal User user,
             @Valid @RequestBody AiRequest request) {
         ResponseEntity<Object> guard = rejectIfUnauthenticated(user);
-        if (guard != null) return CompletableFuture.completedFuture(guard);
-        return handle(aiService.generateCoverLetter(user, request));
+        if (guard != null) return guard;
+        return handle(() -> aiService.generateCoverLetter(user, request));
     }
 
     @PostMapping("/linkedin")
-    public CompletableFuture<ResponseEntity<Object>> optimizeLinkedIn(
+    public ResponseEntity<Object> optimizeLinkedIn(
             @AuthenticationPrincipal User user,
             @Valid @RequestBody AiRequest request) {
         ResponseEntity<Object> guard = rejectIfUnauthenticated(user);
-        if (guard != null) return CompletableFuture.completedFuture(guard);
-        return handle(aiService.optimizeLinkedIn(user, request));
+        if (guard != null) return guard;
+        return handle(() -> aiService.optimizeLinkedIn(user, request));
     }
 
     @PostMapping({"/grammar-check", "/grammar"})
-    public CompletableFuture<ResponseEntity<Object>> checkGrammar(
+    public ResponseEntity<Object> checkGrammar(
             @AuthenticationPrincipal User user,
             @Valid @RequestBody AiRequest request) {
         ResponseEntity<Object> guard = rejectIfUnauthenticated(user);
-        if (guard != null) return CompletableFuture.completedFuture(guard);
-        return handle(aiService.checkGrammar(user, request));
+        if (guard != null) return guard;
+        return handle(() -> aiService.checkGrammar(user, request));
     }
 
     @PostMapping("/interview-prep")
-    public CompletableFuture<ResponseEntity<Object>> generateInterviewPrep(
+    public ResponseEntity<Object> generateInterviewPrep(
             @AuthenticationPrincipal User user,
             @Valid @RequestBody AiRequest request) {
         ResponseEntity<Object> guard = rejectIfUnauthenticated(user);
-        if (guard != null) return CompletableFuture.completedFuture(guard);
-        return handle(aiService.generateInterviewPrep(user, request));
+        if (guard != null) return guard;
+        return handle(() -> aiService.generateInterviewPrep(user, request));
     }
 }

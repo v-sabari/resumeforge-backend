@@ -19,7 +19,6 @@ import org.springframework.retry.RetryPolicy;
 import org.springframework.retry.backoff.ExponentialBackOffPolicy;
 import org.springframework.retry.policy.SimpleRetryPolicy;
 import org.springframework.retry.support.RetryTemplate;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
@@ -28,7 +27,6 @@ import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
 
 /**
  * AI-01 FIX — Production-hardened OpenRouter client.
@@ -153,65 +151,79 @@ public class AiService {
                 model, connectTimeoutMs, readTimeoutMs, maskKey(openRouterApiKey));
     }
 
-    // ── Public async entry points ─────────────────────────────────────────────
+    // ── Public entry points ───────────────────────────────────────────────────
     // AI-02 FIX: each now builds its prompt from the actual fields the
     // frontend sends for that feature (see AIActionPanel.jsx `run()`),
     // not from the never-populated `content` field.
+    //
+    // AI-03 FIX (synchronous conversion): these were previously
+    // @Async("aiTaskExecutor") returning CompletableFuture<JsonNode>. That
+    // meant every /api/ai/* call involved a *second* Servlet async dispatch
+    // to deliver the response once the background thread finished — and
+    // intermittent live testing showed genuine, correctly-authenticated
+    // requests occasionally coming back 401 on exactly these endpoints,
+    // and only these endpoints (every synchronous controller in this app —
+    // ResumeController, PremiumController, ExportController, etc. — has been
+    // 100% reliable across every test). That is the exact structural
+    // fingerprint of Spring Security's authorization check not being
+    // guaranteed to see a preserved SecurityContext on the second (async)
+    // dispatch under a STATELESS session policy, where there is no
+    // session-backed SecurityContextRepository to restore it from.
+    //
+    // Rather than depend on that internal plumbing behaving consistently —
+    // which isn't something that can be verified with certainty without a
+    // live, running instance to test against — these methods now run
+    // synchronously on the original, already-authenticated request thread,
+    // start to finish. There is no second dispatch, so there is nothing for
+    // that race to act on. The tradeoff is that a servlet container thread
+    // is held for the duration of the OpenRouter call (up to ~60s worst
+    // case with retries) instead of being freed immediately; at this app's
+    // scale that is a far smaller risk than intermittently logging
+    // authenticated users out.
 
-    @Async("aiTaskExecutor")
-    public CompletableFuture<JsonNode> rewriteContent(User user, AiRequest request) {
+    public JsonNode rewriteContent(User user, AiRequest request) {
         return callOpenRouter(user, "rewrite", buildRewritePrompt(request));
     }
 
-    @Async("aiTaskExecutor")
-    public CompletableFuture<JsonNode> improveBullets(User user, AiRequest request) {
+    public JsonNode improveBullets(User user, AiRequest request) {
         return callOpenRouter(user, "bullets", buildBulletPrompt(request));
     }
 
-    @Async("aiTaskExecutor")
-    public CompletableFuture<JsonNode> generateSummary(User user, AiRequest request) {
+    public JsonNode generateSummary(User user, AiRequest request) {
         return callOpenRouter(user, "summary", buildSummaryPrompt(request));
     }
 
-    @Async("aiTaskExecutor")
-    public CompletableFuture<JsonNode> extractSkills(User user, AiRequest request) {
+    public JsonNode extractSkills(User user, AiRequest request) {
         return callOpenRouter(user, "skills", buildSkillsPrompt(request));
     }
 
-    @Async("aiTaskExecutor")
-    public CompletableFuture<JsonNode> tailorToJob(User user, AiRequest request) {
+    public JsonNode tailorToJob(User user, AiRequest request) {
         return callOpenRouter(user, "tailor", buildTailorPrompt(request));
     }
 
-    @Async("aiTaskExecutor")
-    public CompletableFuture<JsonNode> atsScore(User user, AiRequest request) {
+    public JsonNode atsScore(User user, AiRequest request) {
         return callOpenRouter(user, "ats_score", buildAtsScorePrompt(request));
     }
 
-    @Async("aiTaskExecutor")
-    public CompletableFuture<JsonNode> generateCoverLetter(User user, AiRequest request) {
+    public JsonNode generateCoverLetter(User user, AiRequest request) {
         return callOpenRouter(user, "cover_letter", buildCoverLetterPrompt(request));
     }
 
-    @Async("aiTaskExecutor")
-    public CompletableFuture<JsonNode> optimizeLinkedIn(User user, AiRequest request) {
+    public JsonNode optimizeLinkedIn(User user, AiRequest request) {
         return callOpenRouter(user, "linkedin", buildLinkedInPrompt(request));
     }
 
-    @Async("aiTaskExecutor")
-    public CompletableFuture<JsonNode> checkGrammar(User user, AiRequest request) {
+    public JsonNode checkGrammar(User user, AiRequest request) {
         return callOpenRouter(user, "grammar_check", buildGrammarCheckPrompt(request));
     }
 
-    @Async("aiTaskExecutor")
-    public CompletableFuture<JsonNode> generateInterviewPrep(User user, AiRequest request) {
+    public JsonNode generateInterviewPrep(User user, AiRequest request) {
         return callOpenRouter(user, "interview_prep", buildInterviewPrepPrompt(request));
     }
 
     // ── Core call (private, uses RetryTemplate programmatically) ─────────────
 
-    private CompletableFuture<JsonNode> callOpenRouter(
-            User user, String feature, String prompt) {
+    private JsonNode callOpenRouter(User user, String feature, String prompt) {
 
         int limit = user.isPremium() ? PREMIUM_DAILY_LIMIT : FREE_DAILY_LIMIT;
         LocalDateTime windowStart = LocalDateTime.now().minusHours(24);
@@ -227,7 +239,7 @@ public class AiService {
             );
         }
 
-        JsonNode responseJson = retryTemplate.execute(retryCtx -> {
+        return retryTemplate.execute(retryCtx -> {
             if (retryCtx.getRetryCount() > 0) {
                 log.warn("[AiService] Retry attempt {} for feature='{}' after: {}",
                         retryCtx.getRetryCount(), feature,
@@ -235,8 +247,6 @@ public class AiService {
             }
             return doHttpCall(user, feature, prompt);
         });
-
-        return CompletableFuture.completedFuture(responseJson);
     }
 
     /**
