@@ -83,6 +83,17 @@ public class Resume {
     @Column(name = "sections_config", columnDefinition = "jsonb")
     private String sectionsConfig;
 
+    // COMPRESS FEATURE — density scale (0 < scale <= 1) applied to fit the
+    // resume into a user-chosen page count. 1.0 = full size / uncompressed.
+    // Computed client-side by utils/compression.js via real, re-measured
+    // DOM search (never guessed) and persisted here so PDF export
+    // (ExportService.buildRenderPayload -> renderPdfHandler.jsx) applies
+    // the EXACT same value the user verified in the live preview — export
+    // can never silently drift from what was approved on screen.
+    @Column(name = "layout_scale")
+    @Builder.Default
+    private Double layoutScale = 1.0;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -97,11 +108,13 @@ public class Resume {
         if (createdAt == null) createdAt = now;
         if (updatedAt == null) updatedAt = now;
         if (template == null || template.isBlank()) template = "modern";
+        if (layoutScale == null || layoutScale <= 0 || layoutScale > 1) layoutScale = 1.0;
     }
 
     @PreUpdate
     public void preUpdate() {
         updatedAt = LocalDateTime.now();
         if (template == null || template.isBlank()) template = "modern";
+        if (layoutScale == null || layoutScale <= 0 || layoutScale > 1) layoutScale = 1.0;
     }
 }

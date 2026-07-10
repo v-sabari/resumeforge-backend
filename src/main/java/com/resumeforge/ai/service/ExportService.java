@@ -221,6 +221,11 @@ public class ExportService {
         flat.put("languages",         parseArr(resume.getLanguages()));
         flat.put("customSections",    parseObj(resume.getCustomSections()));
         flat.put("sectionsConfig",    parseArr(resume.getSectionsConfig()));
+        // COMPRESS FEATURE: forward the exact, already-verified density
+        // scale so the exported PDF paginates identically to what the user
+        // confirmed in the live preview — never recomputed here, never
+        // silently dropped. See Resume.java / renderPdfHandler.jsx.
+        flat.put("layoutScale",       resume.getLayoutScale() == null ? 1.0 : resume.getLayoutScale());
 
         Map<String, Object> req = new LinkedHashMap<>();
         req.put("resume", flat);

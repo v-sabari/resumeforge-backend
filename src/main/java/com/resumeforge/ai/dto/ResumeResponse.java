@@ -28,6 +28,8 @@ public class ResumeResponse {
     private String languages;
     // V20: section ordering / visibility / label config
     private String sectionsConfig;
+    // COMPRESS FEATURE: density scale — see Resume.java for details.
+    private Double layoutScale;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

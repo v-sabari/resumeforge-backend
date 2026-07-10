@@ -69,6 +69,8 @@ public class ResumeService {
                 .languages(sanitizeJsonb(request.getLanguages()))
                 // V20: persist section ordering/visibility/label config
                 .sectionsConfig(sanitizeJsonb(request.getSectionsConfig()))
+                // COMPRESS FEATURE: density scale (defaults to full size)
+                .layoutScale(sanitizeLayoutScale(request.getLayoutScale()))
                 .build();
 
         resume = resumeRepository.save(resume);
@@ -116,6 +118,8 @@ public class ResumeService {
         resume.setLanguages(sanitizeJsonb(request.getLanguages()));
         // V20: update section config on every save
         resume.setSectionsConfig(sanitizeJsonb(request.getSectionsConfig()));
+        // COMPRESS FEATURE: update density scale on every save
+        resume.setLayoutScale(sanitizeLayoutScale(request.getLayoutScale()));
 
         try {
             resume = resumeRepository.save(resume);
@@ -175,6 +179,7 @@ public class ResumeService {
             resume.setAchievements(sanitizeJsonb(sd.getAchievements()));
             resume.setLanguages(sanitizeJsonb(sd.getLanguages()));
             resume.setSectionsConfig(sanitizeJsonb(sd.getSectionsConfig()));
+            resume.setLayoutScale(sanitizeLayoutScale(sd.getLayoutScale()));
             resume = resumeRepository.save(resume);
             createSnapshot(resume);
             return toResponse(resume);
@@ -206,6 +211,16 @@ public class ResumeService {
         return trimmed.length() > TITLE_MAX_LENGTH ? trimmed.substring(0, TITLE_MAX_LENGTH) : trimmed;
     }
 
+    // COMPRESS FEATURE: clamp/validate independently of the DTO's bean
+    // validation, so a directly-crafted request can't smuggle in an
+    // unreadable (<0.5) or nonsensical (>1.0) density scale even if bean
+    // validation were ever bypassed. Missing/invalid -> full size (1.0).
+    private static final double LAYOUT_SCALE_FLOOR = 0.5;
+    private Double sanitizeLayoutScale(Double value) {
+        if (value == null || value.isNaN() || value < LAYOUT_SCALE_FLOOR || value > 1.0) return 1.0;
+        return value;
+    }
+
     private String sanitizeJsonb(String value) {
         if (value == null) return null;
         String trimmed = value.trim();
@@ -235,6 +250,7 @@ public class ResumeService {
             sd.setAchievements(resume.getAchievements());
             sd.setLanguages(resume.getLanguages());
             sd.setSectionsConfig(resume.getSectionsConfig());
+            sd.setLayoutScale(resume.getLayoutScale());
 
             snapshotRepository.save(
                     ResumeSnapshot.builder()
@@ -263,6 +279,7 @@ public class ResumeService {
                 .achievements(resume.getAchievements())
                 .languages(resume.getLanguages())
                 .sectionsConfig(resume.getSectionsConfig())
+                .layoutScale(resume.getLayoutScale())
                 .createdAt(resume.getCreatedAt())
                 .updatedAt(resume.getUpdatedAt())
                 .build();
