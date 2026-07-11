@@ -1,0 +1,26 @@
+Copyright (c) 2026 ResumeForge AI. All Rights Reserved.
+
+This source code and all associated files (the "Software") are the
+proprietary and confidential property of ResumeForge AI.
+
+No part of the Software may be copied, modified, distributed, sublicensed,
+or used, in whole or in part, for any purpose without the prior written
+permission of ResumeForge AI, except as expressly permitted by a separate
+written agreement.
+
+Unauthorized copying, distribution, modification, public display, or public
+performance of this Software is strictly prohibited.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+---
+
+Note: This repository is currently marked proprietary based on the
+existing project documentation. If you intend to open-source this project,
+replace this file with a standard license (MIT, Apache-2.0, etc.).
