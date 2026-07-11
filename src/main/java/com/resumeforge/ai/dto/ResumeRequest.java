@@ -39,7 +39,14 @@ public class ResumeRequest {
     // Bounded server-side too (not just trusted from the client) — never
     // allow a value that would make text unreadable (below the frontend's
     // own MIN_SCALE floor of 0.72) or a nonsensical scale-up above 1.0.
+    // COMPRESS FEATURE: density scale applied to fit a chosen page count.
+    // Bounded server-side too (not just trusted from the client) — never
+    // allow a value that would make text unreadable (below the frontend's
+    // own MIN_SCALE floor of 0.72, with a little slack to 0.5) or
+    // unprofessionally oversized (above the frontend's own MAX_SCALE
+    // ceiling of 1.35). Keep these bounds in sync with
+    // frontend/src/utils/compression.js MIN_SCALE / MAX_SCALE.
     @DecimalMin(value = "0.5", message = "layoutScale must be at least 0.5")
-    @DecimalMax(value = "1.0", message = "layoutScale must not exceed 1.0")
+    @DecimalMax(value = "1.35", message = "layoutScale must not exceed 1.35")
     private Double layoutScale;
 }

@@ -215,9 +215,17 @@ public class ResumeService {
     // validation, so a directly-crafted request can't smuggle in an
     // unreadable (<0.5) or nonsensical (>1.0) density scale even if bean
     // validation were ever bypassed. Missing/invalid -> full size (1.0).
+    // COMPRESS FEATURE: clamp/validate independently of the DTO's bean
+    // validation, so a directly-crafted request can't smuggle in an
+    // unreadable (<0.5, shrink direction) or unprofessionally oversized
+    // (>1.35, grow direction) density scale even if bean validation were
+    // ever bypassed. Missing/invalid -> full size / unchanged (1.0). Keep
+    // these bounds in sync with frontend/src/utils/compression.js
+    // MIN_SCALE (0.72, with slack to 0.5 here) / MAX_SCALE (1.35).
     private static final double LAYOUT_SCALE_FLOOR = 0.5;
+    private static final double LAYOUT_SCALE_CEILING = 1.35;
     private Double sanitizeLayoutScale(Double value) {
-        if (value == null || value.isNaN() || value < LAYOUT_SCALE_FLOOR || value > 1.0) return 1.0;
+        if (value == null || value.isNaN() || value < LAYOUT_SCALE_FLOOR || value > LAYOUT_SCALE_CEILING) return 1.0;
         return value;
     }
 
