@@ -1,37 +1,32 @@
 -- ============================================================
 -- V1__initial_schema.sql
 -- Built 100% from entity files. Zero assumptions.
+-- Rewritten for MySQL 8.0 (originally PostgreSQL).
 -- ============================================================
 
 -- -------------------------
 -- USERS (from User.java)
--- Fields: id, name, email, password_hash, role, is_premium,
---         premium_expires_at, email_verified, email_otp,
---         email_otp_expires_at, password_reset_token,
---         password_reset_expires_at, referral_code,
---         referred_by_user_id, has_created_resume,
---         created_at, token_issued_at
 -- -------------------------
 CREATE TABLE users (
-    id                        BIGSERIAL    PRIMARY KEY,
+    id                        BIGINT       AUTO_INCREMENT PRIMARY KEY,
     name                      VARCHAR(120) NOT NULL,
     email                     VARCHAR(160) NOT NULL UNIQUE,
     password_hash             VARCHAR(255) NOT NULL,
     role                      VARCHAR(30)  NOT NULL DEFAULT 'USER',
     is_premium                BOOLEAN      NOT NULL DEFAULT FALSE,
-    premium_expires_at        TIMESTAMP    NULL,
+    premium_expires_at        DATETIME     NULL,
     email_verified            BOOLEAN      NOT NULL DEFAULT FALSE,
     email_otp                 VARCHAR(20),
-    email_otp_expires_at      TIMESTAMP,
+    email_otp_expires_at      DATETIME,
     password_reset_token      VARCHAR(255),
-    password_reset_expires_at TIMESTAMP,
+    password_reset_expires_at DATETIME,
     referral_code             VARCHAR(12)  UNIQUE,
     referred_by_user_id       BIGINT,
     has_created_resume        BOOLEAN      NOT NULL DEFAULT FALSE,
-    created_at                TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    token_issued_at           TIMESTAMP    NULL,
+    created_at                DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    token_issued_at           DATETIME     NULL,
     CONSTRAINT fk_users_referred_by FOREIGN KEY (referred_by_user_id) REFERENCES users(id)
-);
+) ENGINE=InnoDB;
 
 CREATE INDEX idx_users_email         ON users(email);
 CREATE INDEX idx_users_referral_code ON users(referral_code);
@@ -39,54 +34,47 @@ CREATE INDEX idx_users_referred_by   ON users(referred_by_user_id);
 
 -- -------------------------
 -- RESUMES (from Resume.java)
--- Fields: id, user_id, title, template, personal_info, summary,
---         experience, education, skills, projects,
---         certifications, custom_sections, created_at, updated_at
 -- -------------------------
 CREATE TABLE resumes (
-    id              BIGSERIAL    PRIMARY KEY,
+    id              BIGINT       AUTO_INCREMENT PRIMARY KEY,
     user_id         BIGINT       NOT NULL,
     title           VARCHAR(500) NOT NULL,
     template        VARCHAR(100) NOT NULL DEFAULT 'modern',
-    personal_info   JSONB,
+    personal_info   JSON,
     summary         TEXT,
-    experience      JSONB,
-    education       JSONB,
-    skills          JSONB,
-    projects        JSONB,
-    certifications  JSONB,
-    custom_sections JSONB,
-    created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TIMESTAMP,
+    experience      JSON,
+    education       JSON,
+    skills          JSON,
+    projects        JSON,
+    certifications  JSON,
+    custom_sections JSON,
+    created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME,
     CONSTRAINT fk_resumes_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
+) ENGINE=InnoDB;
 
 CREATE INDEX idx_resumes_user_id    ON resumes(user_id);
 CREATE INDEX idx_resumes_created_at ON resumes(created_at);
 
 -- -------------------------
 -- RESUME SNAPSHOTS (from ResumeSnapshot.java)
--- Fields: id, resume_id, snapshot_data, created_at
 -- -------------------------
 CREATE TABLE resume_snapshots (
-    id            BIGSERIAL PRIMARY KEY,
-    resume_id     BIGINT    NOT NULL,
-    snapshot_data JSONB     NOT NULL,
-    created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    id            BIGINT   AUTO_INCREMENT PRIMARY KEY,
+    resume_id     BIGINT   NOT NULL,
+    snapshot_data JSON     NOT NULL,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_snapshots_resume FOREIGN KEY (resume_id) REFERENCES resumes(id) ON DELETE CASCADE
-);
+) ENGINE=InnoDB;
 
 CREATE INDEX idx_snapshots_resume_id  ON resume_snapshots(resume_id);
 CREATE INDEX idx_snapshots_created_at ON resume_snapshots(created_at);
 
 -- -------------------------
 -- PAYMENTS (from Payment.java)
--- Fields: id, user_id, razorpay_order_id, razorpay_payment_id,
---         razorpay_signature, amount, currency, status,
---         payment_method, invoice_sent, created_at, updated_at
 -- -------------------------
 CREATE TABLE payments (
-    id                  BIGSERIAL     PRIMARY KEY,
+    id                  BIGINT        AUTO_INCREMENT PRIMARY KEY,
     user_id             BIGINT        NOT NULL,
     razorpay_order_id   VARCHAR(255),
     razorpay_payment_id VARCHAR(255),
@@ -96,10 +84,10 @@ CREATE TABLE payments (
     status              VARCHAR(50)   NOT NULL DEFAULT 'PENDING',
     payment_method      VARCHAR(100),
     invoice_sent        BOOLEAN       NOT NULL DEFAULT FALSE,
-    created_at          TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at          TIMESTAMP,
+    created_at          DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at          DATETIME,
     CONSTRAINT fk_payments_user FOREIGN KEY (user_id) REFERENCES users(id)
-);
+) ENGINE=InnoDB;
 
 CREATE INDEX idx_payments_user_id             ON payments(user_id);
 CREATE INDEX idx_payments_razorpay_order_id   ON payments(razorpay_order_id);
@@ -108,51 +96,48 @@ CREATE INDEX idx_payments_status              ON payments(status);
 
 -- -------------------------
 -- EXPORT HISTORY (from ExportHistory.java)
--- Fields: id, user_id, resume_id, export_format, created_at
 -- -------------------------
 CREATE TABLE export_history (
-    id            BIGSERIAL   PRIMARY KEY,
+    id            BIGINT      AUTO_INCREMENT PRIMARY KEY,
     user_id       BIGINT      NOT NULL,
     resume_id     BIGINT,
     export_format VARCHAR(20) NOT NULL,
-    created_at    TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at    DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_export_history_user   FOREIGN KEY (user_id)   REFERENCES users(id),
     CONSTRAINT fk_export_history_resume FOREIGN KEY (resume_id) REFERENCES resumes(id) ON DELETE SET NULL
-);
+) ENGINE=InnoDB;
 
 CREATE INDEX idx_export_history_user_id    ON export_history(user_id);
 CREATE INDEX idx_export_history_created_at ON export_history(created_at);
 
 -- -------------------------
 -- CONTACT MESSAGES (from ContactMessage.java)
--- Fields: id, name, email, message, status, created_at, updated_at
 -- -------------------------
 CREATE TABLE contact_messages (
-    id         BIGSERIAL PRIMARY KEY,
+    id         BIGINT       AUTO_INCREMENT PRIMARY KEY,
     name       VARCHAR(255) NOT NULL,
     email      VARCHAR(255) NOT NULL,
     message    TEXT         NOT NULL,
     status     VARCHAR(50)  NOT NULL DEFAULT 'NEW',
-    created_at TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP
-);
+    created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME
+) ENGINE=InnoDB;
 
 CREATE INDEX idx_contact_messages_status     ON contact_messages(status);
 CREATE INDEX idx_contact_messages_created_at ON contact_messages(created_at);
 
 -- -------------------------
 -- AI USAGE LOG (from AiUsageLog.java)
--- Fields: id, user_id, feature, input_tokens, output_tokens, created_at
 -- -------------------------
 CREATE TABLE ai_usage_log (
-    id            BIGSERIAL    PRIMARY KEY,
+    id            BIGINT       AUTO_INCREMENT PRIMARY KEY,
     user_id       BIGINT       NOT NULL,
     feature       VARCHAR(100) NOT NULL,
     input_tokens  INTEGER,
     output_tokens INTEGER,
-    created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_ai_usage_user FOREIGN KEY (user_id) REFERENCES users(id)
-);
+) ENGINE=InnoDB;
 
 CREATE INDEX idx_ai_usage_user_id    ON ai_usage_log(user_id);
 CREATE INDEX idx_ai_usage_feature    ON ai_usage_log(feature);
@@ -160,37 +145,32 @@ CREATE INDEX idx_ai_usage_created_at ON ai_usage_log(created_at);
 
 -- -------------------------
 -- AD FLOW LOG (from AdFlowLog.java)
--- Fields: id, user_id, ad_type, status, created_at
 -- -------------------------
 CREATE TABLE ad_flow_log (
-    id         BIGSERIAL   PRIMARY KEY,
+    id         BIGINT      AUTO_INCREMENT PRIMARY KEY,
     user_id    BIGINT      NOT NULL,
     ad_type    VARCHAR(50) NOT NULL,
     status     VARCHAR(50) NOT NULL,
-    created_at TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_ad_flow_user FOREIGN KEY (user_id) REFERENCES users(id)
-);
+) ENGINE=InnoDB;
 
 CREATE INDEX idx_ad_flow_user_id    ON ad_flow_log(user_id);
 CREATE INDEX idx_ad_flow_created_at ON ad_flow_log(created_at);
 
 -- -------------------------
 -- REFERRAL REWARDS (from ReferralReward.java)
--- Fields: id, user_id (FK), reward_type, description,
---         milestone_count, granted_at, expires_at
--- Note: NO referred_user_id, reward_value, reward_status,
---       created_at, updated_at — not in entity
 -- -------------------------
 CREATE TABLE referral_rewards (
-    id              BIGSERIAL    PRIMARY KEY,
+    id              BIGINT       AUTO_INCREMENT PRIMARY KEY,
     user_id         BIGINT       NOT NULL,
     reward_type     VARCHAR(40)  NOT NULL,
     description     VARCHAR(255) NOT NULL,
     milestone_count INTEGER      NOT NULL,
-    granted_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    expires_at      TIMESTAMP    NULL,
+    granted_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at      DATETIME     NULL,
     CONSTRAINT fk_referral_rewards_user FOREIGN KEY (user_id) REFERENCES users(id)
-);
+) ENGINE=InnoDB;
 
 CREATE INDEX idx_referral_rewards_user      ON referral_rewards(user_id);
 CREATE INDEX idx_referral_rewards_milestone ON referral_rewards(milestone_count);
@@ -198,24 +178,21 @@ CREATE UNIQUE INDEX uk_referral_reward_user_milestone ON referral_rewards(user_i
 
 -- -------------------------
 -- REFERRAL HISTORY (from ReferralHistory.java)
--- Fields: id, referrer_user_id (FK), referred_user_id (FK),
---         status, email_verified, resume_created,
---         created_at, qualified_at
 -- -------------------------
 CREATE TABLE referral_history (
-    id               BIGSERIAL   PRIMARY KEY,
+    id               BIGINT      AUTO_INCREMENT PRIMARY KEY,
     referrer_user_id BIGINT      NOT NULL,
     referred_user_id BIGINT      NOT NULL,
     status           VARCHAR(20) NOT NULL DEFAULT 'PENDING',
     email_verified   BOOLEAN     NOT NULL DEFAULT FALSE,
     resume_created   BOOLEAN     NOT NULL DEFAULT FALSE,
-    created_at       TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    qualified_at     TIMESTAMP   NULL,
+    created_at       DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    qualified_at     DATETIME    NULL,
     CONSTRAINT uk_referral_history_referred_user UNIQUE (referred_user_id),
     CONSTRAINT chk_referral_history_status CHECK (status IN ('PENDING', 'QUALIFIED', 'REJECTED')),
     CONSTRAINT fk_referral_history_referrer FOREIGN KEY (referrer_user_id) REFERENCES users(id) ON DELETE CASCADE,
     CONSTRAINT fk_referral_history_referred FOREIGN KEY (referred_user_id) REFERENCES users(id) ON DELETE CASCADE
-);
+) ENGINE=InnoDB;
 
 CREATE INDEX idx_referral_history_referrer ON referral_history(referrer_user_id);
 CREATE INDEX idx_referral_history_referred ON referral_history(referred_user_id);

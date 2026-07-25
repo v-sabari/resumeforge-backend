@@ -76,44 +76,36 @@
         </dependency>
 
         <!-- ── Database ──────────────────────────────────────────────────── -->
+        <!--
+            MYSQL MIGRATION (was org.postgresql:postgresql):
+            Switched to MySQL Connector/J for AWS RDS MySQL 8.0.
+            Spring Boot 3.2.5's BOM manages the version — no <version> needed.
+            groupId is "com.mysql" (Connector/J 8.1+); older tutorials/artifacts
+            using "mysql:mysql-connector-java" are the legacy pre-8.1 coordinates
+            and should NOT be mixed with this one.
+        -->
         <dependency>
-            <groupId>org.postgresql</groupId>
-            <artifactId>postgresql</artifactId>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
             <scope>runtime</scope>
         </dependency>
 
         <!-- ── Flyway migrations ─────────────────────────────────────────── -->
         <!--
-            Spring Boot 3.2.5 manages Flyway at version 9.22.3.
-            In Flyway 9.x, PostgreSQL dialect support is built directly into
-            flyway-core — there is NO separate flyway-database-postgresql artifact
-            in the 9.x line. That artifact was introduced in Flyway 10.0 as part
-            of a modular split.
-
-            ROOT CAUSE OF BUILD FAILURE:
-            The original pom.xml included flyway-database-postgresql without a
-            <version> tag. Because Spring Boot 3.2.5's BOM has no entry for this
-            artifact (it does not exist in Flyway 9.x), Maven cannot resolve the
-            version and fails with:
-              "dependencies.dependency.version for
-               org.flywaydb:flyway-database-postgresql:jar is missing"
-
-            FIX: Remove flyway-database-postgresql entirely.
-            flyway-core alone is sufficient for PostgreSQL on Flyway 9.x.
-
-            If you later upgrade Spring Boot to 3.3+ (which ships with Flyway 10+),
-            add back:
-              <dependency>
-                  <groupId>org.flywaydb</groupId>
-                  <artifactId>flyway-database-postgresql</artifactId>
-              </dependency>
-            At that point the Spring Boot BOM will manage the version automatically.
+            MYSQL MIGRATION NOTE:
+            Flyway 9.x (managed by Spring Boot 3.2.5's BOM at 9.22.3) requires
+            an explicit database-specific module for MySQL, unlike Postgres
+            (which is built into flyway-core in the 9.x line). Without this,
+            Flyway throws "Unsupported Database: MySQL 8.0" at startup.
         -->
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-core</artifactId>
         </dependency>
-        <!-- flyway-database-postgresql REMOVED — does not exist in Flyway 9.x -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-mysql</artifactId>
+        </dependency>
 
         <!-- ── JWT ───────────────────────────────────────────────────────── -->
         <dependency>
@@ -291,22 +283,6 @@
                     </annotationProcessorPaths>
                 </configuration>
             </plugin>
-
-            <!--
-                RENDER DEPLOYMENT NOTE:
-                Render runs `mvn package -DskipTests` by default.
-                The spring-boot-maven-plugin creates an executable JAR at:
-                  target/resumeforge-ai-1.0.0.jar
-                Set Render start command to:
-                  java -jar target/resumeforge-ai-1.0.0.jar
-                OR use:
-                  java -Xmx256m -jar target/resumeforge-ai-1.0.0.jar
-                on Render's free tier (512 MB RAM limit).
-
-                Font files are bundled in the JAR automatically because Maven
-                copies everything under src/main/resources to the classpath.
-                NO extra Render configuration is required for fonts.
-            -->
 
         </plugins>
 

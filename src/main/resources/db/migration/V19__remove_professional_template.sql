@@ -1,16 +1,10 @@
+-- Rewritten for MySQL 8.0 (originally PostgreSQL).
 UPDATE resumes SET template = 'modern' WHERE template = 'professional';
 
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM information_schema.table_constraints
-        WHERE  table_name      = 'resumes'
-          AND  constraint_name = 'chk_resumes_template'
-          AND  constraint_type = 'CHECK'
-    ) THEN
-        ALTER TABLE resumes DROP CONSTRAINT chk_resumes_template;
-    END IF;
-END $$;
+-- The constraint was created in V17 on this same DB, so it is guaranteed
+-- to exist here — no existence guard needed (MySQL's DROP CHECK doesn't
+-- support IF EXISTS the way Postgres's DROP CONSTRAINT does).
+ALTER TABLE resumes DROP CHECK chk_resumes_template;
 
 ALTER TABLE resumes
     ADD CONSTRAINT chk_resumes_template
