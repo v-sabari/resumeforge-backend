@@ -42,11 +42,7 @@ ALTER TABLE resumes
 -- MYSQL NOTE: "ADD COLUMN IF NOT EXISTS" is not valid MySQL syntax (that's a
 -- Postgres/MariaDB feature). Removed here since these columns don't already
 -- exist on a fresh MySQL DB built from V1 anyway.
-ALTER TABLE resumes ADD COLUMN personal_info   JSON;
-ALTER TABLE resumes ADD COLUMN experience      JSON;
-ALTER TABLE resumes ADD COLUMN education       JSON;
-ALTER TABLE resumes ADD COLUMN skills          JSON;
-ALTER TABLE resumes ADD COLUMN projects        JSON;
+
 
 -- ── Step 7: Ensure title NOT NULL with safe default ───────────────────────────
 UPDATE resumes
