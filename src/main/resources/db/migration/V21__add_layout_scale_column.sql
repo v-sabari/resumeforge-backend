@@ -12,8 +12,10 @@
 -- .buildRenderPayload -> renderPdfHandler.jsx) so the exported file always
 -- matches what the user confirmed in the live preview — never a
 -- re-derived or re-guessed value.
+-- MYSQL NOTE: "ADD COLUMN IF NOT EXISTS" is not valid MySQL syntax. Removed
+-- since this is a fresh column add.
 ALTER TABLE resumes
-    ADD COLUMN IF NOT EXISTS layout_scale DOUBLE NOT NULL DEFAULT 1.0;
+    ADD COLUMN layout_scale DOUBLE NOT NULL DEFAULT 1.0;
 
 ALTER TABLE resumes
     ADD CONSTRAINT chk_layout_scale_range CHECK (layout_scale >= 0.5 AND layout_scale <= 1.0);

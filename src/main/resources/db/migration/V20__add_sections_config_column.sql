@@ -30,8 +30,10 @@
 -- NULL is allowed: when absent, the application falls back to a built-in
 -- default ordering so existing resumes created before this migration
 -- continue to render unchanged.
+-- MYSQL NOTE: "ADD COLUMN IF NOT EXISTS" is not valid MySQL syntax. Removed
+-- since this is a fresh column add.
 ALTER TABLE resumes
-    ADD COLUMN IF NOT EXISTS sections_config JSON;
+    ADD COLUMN sections_config JSON;
 
 ALTER TABLE resumes
     MODIFY COLUMN sections_config JSON COMMENT
