@@ -31,12 +31,7 @@ ALTER TABLE resumes
 -- ── Step 5: Add CHECK constraint ─────────────────────────────────────────────
 -- This is the first time this constraint is created (fresh MySQL DB via
 -- Flyway), so no existence guard is needed.
-ALTER TABLE resumes
-    ADD CONSTRAINT chk_resumes_template
-    CHECK (template IN (
-        'modern', 'classic', 'minimal', 'professional',
-        'executive', 'fresher', 'creative'
-    ));
+
 
 -- ── Step 6: Ensure JSON columns exist with correct type ──────────────────────
 -- MYSQL NOTE: "ADD COLUMN IF NOT EXISTS" is not valid MySQL syntax (that's a
