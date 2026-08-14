@@ -125,9 +125,17 @@ public class AuthController {
         // SEC-07 FIX: When no Authorization header is sent (or JWT is invalid),
         // Spring injects null for @AuthenticationPrincipal. Without this guard,
         // authService.getCurrentUser(null) calls null.getId() → NullPointerException → 500.
-        // The correct response is 401 Unauthorized.
+        //
+        // PROBE FIX: /api/auth/me doubles as the anonymous "am I logged in?"
+        // probe that AuthContext fires on every page load — including public
+        // pages like /pricing. Returning 401 there made the browser log
+        // "Failed to load resource: 401" for every anonymous visit and forced
+        // the frontend interceptor to special-case it. Anonymous visitors now
+        // get 200 with an all-null UserResponse (id == null), and the frontend
+        // treats me.id == null as logged-out. Authenticated callers are
+        // unaffected and still receive the full user profile.
         if (user == null) {
-            return ResponseEntity.status(org.springframework.http.HttpStatus.UNAUTHORIZED).build();
+            return ResponseEntity.ok(new UserResponse());
         }
         return ResponseEntity.ok(authService.getCurrentUser(user));
     }
