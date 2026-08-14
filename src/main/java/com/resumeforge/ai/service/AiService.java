@@ -1,7 +1,7 @@
 package com.resumeforge.ai.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.resumeforge.ai.dto.AiRequest;
 import com.resumeforge.ai.entity.AiUsageLog;
 import com.resumeforge.ai.entity.User;
@@ -338,7 +338,7 @@ public class AiService {
             }
 
             JsonNode envelope = objectMapper.readTree(responseBody);
-            String   rawContent = envelope.at("/choices/0/message/content").asText(null);
+            String   rawContent = envelope.at("/choices/0/message/content").asString(null);
 
             if (rawContent == null || rawContent.isBlank()) {
                 log.error("[AiService] Empty content in OpenRouter response for feature='{}'. " +

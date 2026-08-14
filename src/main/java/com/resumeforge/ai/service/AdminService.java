@@ -2,6 +2,7 @@ package com.resumeforge.ai.service;
 
 import com.resumeforge.ai.dto.*;
 import com.resumeforge.ai.entity.User;
+import com.resumeforge.ai.exception.BadRequestException;
 import com.resumeforge.ai.exception.ResourceNotFoundException;
 import com.resumeforge.ai.repository.*;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -9,7 +10,6 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.data.domain.PageRequest;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -90,11 +90,15 @@ public class AdminService {
     }
 
     public Page<AdminUserResponse> getUsers(int page, int size, String query) {
+        // SEC FIX: clamp pagination so a hostile admin-facing request cannot
+        // trigger an unbounded query / huge page allocation.
+        int safePage = Math.max(0, page);
+        int safeSize = Math.min(Math.max(1, size), 100);
         Page<User> users;
         if (query != null && !query.isEmpty()) {
-            users = userRepository.searchUsers(query, PageRequest.of(page, size));
+            users = userRepository.searchUsers(query, PageRequest.of(safePage, safeSize));
         } else {
-            users = userRepository.findAll(PageRequest.of(page, size));
+            users = userRepository.findAll(PageRequest.of(safePage, safeSize));
         }
         return users.map(this::toAdminUserResponse);
     }
@@ -107,10 +111,17 @@ public class AdminService {
 
     @Transactional
     public ApiResponse setUserRole(Long userId, SetRoleRequest request) {
+        // SEC FIX: only accept known roles — an unbounded value would otherwise
+        // create e.g. ROLE_"SUPERADMIN" or garbage authority strings.
+        String role = request.getRole();
+        if (role == null || !(role.equals("USER") || role.equals("ADMIN"))) {
+            throw new BadRequestException("Role must be either USER or ADMIN");
+        }
+
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        user.setRole(request.getRole());
+        user.setRole(role);
         userRepository.save(user);
 
         return ApiResponse.success("User role updated");
@@ -121,14 +132,20 @@ public class AdminService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
+        // SEC/BUS FIX: an admin grant is permanent — clear any time-limited
+        // referral expiry so isPremium() (which honors premiumExpiresAt) does not
+        // deactivate the admin grant later. Without this, granting premium to a
+        // user with an expired referral expiry would have no lasting effect.
         user.setPremium(request.getPremium());
+        user.setPremiumExpiresAt(null);
         userRepository.save(user);
 
         return ApiResponse.success("Premium status updated");
     }
 
     public Page<PaymentResponse> getPayments(int page, int size) {
-        return paymentService.getAllPayments(page, size);
+        // SEC FIX: clamp pagination (same reasoning as getUsers).
+        return paymentService.getAllPayments(Math.max(0, page), Math.min(Math.max(1, size), 100));
     }
 
     public Map<String, Object> getAiStats() {

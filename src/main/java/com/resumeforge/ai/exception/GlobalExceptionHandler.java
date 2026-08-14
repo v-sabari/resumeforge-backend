@@ -119,8 +119,10 @@ public class GlobalExceptionHandler {
      * but the contained data values conflict with the DB schema.
      *
      * We log at WARN (not ERROR) because this is a data problem, not a server
-     * crash. The root cause message is included to help diagnose which constraint
-     * fired in production logs.
+     * crash. The root cause message is logged with full detail server-side for
+     * diagnostics, but the response body deliberately does NOT echo it — the raw
+     * DB message (constraint names, table/column details) leaks schema internals
+     * to clients.
      */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ApiResponse> handleDataIntegrityViolation(
@@ -128,10 +130,10 @@ public class GlobalExceptionHandler {
         String rootMsg = rootCause(ex);
         log.warn("DataIntegrityViolationException: {}", rootMsg);
         return ResponseEntity
-                .status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .status(HttpStatus.UNPROCESSABLE_CONTENT)
                 .body(ApiResponse.error(
                         "The request data conflicts with existing constraints. " +
-                        "Check required fields and value lengths. Detail: " + rootMsg));
+                        "Check required fields and value lengths."));
     }
 
     /**

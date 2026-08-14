@@ -1,12 +1,13 @@
 package com.resumeforge.ai.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.resumeforge.ai.dto.*;
 import com.resumeforge.ai.entity.ExportHistory;
 import com.resumeforge.ai.entity.Resume;
 import com.resumeforge.ai.entity.User;
 import com.resumeforge.ai.exception.ResourceNotFoundException;
+import com.resumeforge.ai.exception.RateLimitException;
 import com.resumeforge.ai.repository.ExportHistoryRepository;
 import com.resumeforge.ai.repository.ResumeRepository;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -51,6 +52,8 @@ import java.util.stream.StreamSupport;
 public class ExportService {
 
     /* ── PDF layout constants ─────────────────────────────────────── */
+    // SEC/BUS FIX: free-tier daily export limit (3 per rolling 24h).
+    private static final int FREE_LIMIT     = 3;
     private static final float MARGIN       = 50f;
     private static final float PAGE_H       = PDRectangle.A4.getHeight();
     private static final float PAGE_W       = PDRectangle.A4.getWidth();
@@ -134,13 +137,33 @@ public class ExportService {
                 .build();
     }
 
+    // SEC/BUS FIX: the frontend calls /api/export/record BEFORE downloading, so
+    // this is the effective accounting point for the free daily export quota.
+    // Previously recordExport() saved a row with no quota check at all — the
+    // "3 free exports/day" limit was only advisory. Now it delegates to
+    // checkAndRecordExport(), which enforces the limit atomically (free users:
+    // 3 exports per rolling 24h; premium: unlimited) and rejects with 429 once
+    // exceeded. The frontend ignores the response body, so returning
+    // ExportStatusResponse instead of ApiResponse is backwards-compatible.
     @Transactional
-    public ApiResponse recordExport(User user, ExportRecordRequest request) {
-        Resume r = load(user, request.getResumeId());
-        exportHistoryRepository.save(ExportHistory.builder()
-                .userId(user.getId()).resumeId(r.getId())
-                .exportFormat(request.getFormat().toUpperCase()).build());
-        return ApiResponse.success("Export recorded");
+    public ExportStatusResponse recordExport(User user, ExportRecordRequest request) {
+        return checkAndRecordExport(user, request.getResumeId(), request.getFormat());
+    }
+
+    /**
+     * SEC/BUS FIX: hard backstop on the download paths. /api/export/record is the
+     * accounting point, but the actual download endpoints (pdf/docx/txt) would
+     * still serve a file to a free user past the limit (e.g. a script calling
+     * download directly without recording, or a stale/duplicated record edge case).
+     * The guard is deliberately {@code countRecent > FREE_LIMIT} (strictly greater),
+     * NOT {@code >=}: the frontend records BEFORE downloading, so a legit third
+     * export already has 3 rows on record and must still be allowed.
+     */
+    private void enforceExportQuota(User user) {
+        if (!user.isPremium() && countRecent(user) > FREE_LIMIT) {
+            throw new RateLimitException(
+                    "Free export limit reached (3 per day). Upgrade to premium for unlimited exports.");
+        }
     }
 
     public List<ExportHistoryResponse> getExportHistory(User user) {
@@ -158,6 +181,7 @@ public class ExportService {
        ================================================================ */
 
     public byte[] exportToPdf(User user, Long resumeId) {
+        enforceExportQuota(user);
         Resume resume = load(user, resumeId);
         Map<String, Object> payload = buildRenderPayload(resume);
 
@@ -351,7 +375,7 @@ public class ExportService {
             String meta = joinMeta(t(e,"location"),t(e,"employmentType"));
             if (!meta.isBlank()) w.writeWrapped(meta, reg, SMALL_SIZE);
             if (!t(e,"summary").isBlank()) w.writeWrapped(t(e,"summary"), reg, FONT_SIZE);
-            for (JsonNode b : e.path("bullets")) { String bl=b.asText(""); if(!bl.isBlank()) w.writeBullet(bl, reg, FONT_SIZE); }
+            for (JsonNode b : e.path("bullets")) { String bl=b.asString(""); if(!bl.isBlank()) w.writeBullet(bl, reg, FONT_SIZE); }
             w.moveDown(ITEM_GAP);
         }
         w.moveDown(SECTION_GAP-ITEM_GAP);
@@ -369,7 +393,7 @@ public class ExportService {
             List<String> urls = parts(t(p,"link"),t(p,"github"));
             if (!urls.isEmpty()) w.writeWrapped(join(urls,"  ·  "), reg, SMALL_SIZE);
             if (!t(p,"description").isBlank()) w.writeWrapped(t(p,"description"), reg, FONT_SIZE);
-            for (JsonNode h : p.path("highlights")) { String hl=h.asText(""); if(!hl.isBlank()) w.writeBullet(hl, reg, FONT_SIZE); }
+            for (JsonNode h : p.path("highlights")) { String hl=h.asString(""); if(!hl.isBlank()) w.writeBullet(hl, reg, FONT_SIZE); }
             w.moveDown(ITEM_GAP);
         }
         w.moveDown(SECTION_GAP-ITEM_GAP);
@@ -395,7 +419,7 @@ public class ExportService {
         if (!arr.isArray() || arr.size()==0) return;
         w.writeHeading(hl(label,"SKILLS"));
         List<String> list = new ArrayList<>();
-        for (JsonNode s : arr) { String v=s.asText(""); if(!v.isBlank()) list.add(v); }
+        for (JsonNode s : arr) { String v=s.asString(""); if(!v.isBlank()) list.add(v); }
         if (!list.isEmpty()) w.writeWrapped(join(list,"  ·  "), reg, FONT_SIZE);
         w.moveDown(SECTION_GAP);
     }
@@ -403,7 +427,7 @@ public class ExportService {
     private void renderPdfList(PdfWriter w, PDType0Font reg, String label, JsonNode arr) throws Exception {
         if (!arr.isArray() || arr.size()==0) return;
         w.writeHeading(hl(label,"ACHIEVEMENTS"));
-        for (JsonNode a : arr) { String v=a.asText(""); if(!v.isBlank()) w.writeBullet(v, reg, FONT_SIZE); }
+        for (JsonNode a : arr) { String v=a.asString(""); if(!v.isBlank()) w.writeBullet(v, reg, FONT_SIZE); }
         w.moveDown(SECTION_GAP);
     }
 
@@ -412,7 +436,7 @@ public class ExportService {
         if (!arr.isArray() || arr.size()==0) return;
         w.writeHeading(hl(label,"CERTIFICATIONS"));
         for (JsonNode c : arr) {
-            String line = c.isTextual() ? c.asText("") : certLine(c);
+            String line = c.isString() ? c.asString("") : certLine(c);
             if (!line.isBlank()) w.writeWrapped(line, reg, FONT_SIZE);
         }
         w.moveDown(SECTION_GAP);
@@ -421,13 +445,13 @@ public class ExportService {
     private void renderPdfCustomSection(PdfWriter w, PDType0Font reg, PDType0Font bold,
                                         String label, JsonNode content) throws Exception {
         if (content==null || content.isMissingNode()) return;
-        String mode  = content.path("mode").asText("text");
-        String text  = content.path("text").asText("").trim();
+        String mode  = content.path("mode").asString("text");
+        String text  = content.path("text").asString("").trim();
         JsonNode items = content.path("items");
         if ("bullets".equals(mode)) {
             if (!items.isArray()) return;
             List<String> blist = new ArrayList<>();
-            for (JsonNode it : items) { String v=it.asText("").trim(); if(!v.isBlank()) blist.add(v); }
+            for (JsonNode it : items) { String v=it.asString("").trim(); if(!v.isBlank()) blist.add(v); }
             if (blist.isEmpty()) return;
             w.writeHeading(label.toUpperCase());
             for (String b : blist) w.writeBullet(b, reg, FONT_SIZE);
@@ -445,6 +469,7 @@ public class ExportService {
        ================================================================ */
 
     public byte[] exportToDocx(User user, Long resumeId) {
+        enforceExportQuota(user);
         Resume resume = load(user, resumeId);
         try (XWPFDocument doc = new XWPFDocument()) {
             CTSectPr sp = doc.getDocument().getBody().addNewSectPr();
@@ -517,7 +542,7 @@ public class ExportService {
             if (!head.isBlank()) dTwoCol(doc, head, dates);
             String meta=joinMeta(t(e,"location"),t(e,"employmentType")); if(!meta.isBlank()) dMeta(doc,meta);
             if (!t(e,"summary").isBlank()) dBody(doc, t(e,"summary"));
-            for (JsonNode b : e.path("bullets")) { String bl=b.asText(""); if(!bl.isBlank()) dBullet(doc,bl); }
+            for (JsonNode b : e.path("bullets")) { String bl=b.asString(""); if(!bl.isBlank()) dBullet(doc,bl); }
             dSpacer(doc);
         }
     }
@@ -532,7 +557,7 @@ public class ExportService {
             if (!t(p,"techStack").isBlank()) dMeta(doc,"Tech: "+t(p,"techStack"));
             List<String> urls=parts(t(p,"link"),t(p,"github")); if(!urls.isEmpty()) dMeta(doc,join(urls,"  ·  "));
             if (!t(p,"description").isBlank()) dBody(doc,t(p,"description"));
-            for (JsonNode h : p.path("highlights")) { String hl=h.asText(""); if(!hl.isBlank()) dBullet(doc,hl); }
+            for (JsonNode h : p.path("highlights")) { String hl=h.asString(""); if(!hl.isBlank()) dBullet(doc,hl); }
             dSpacer(doc);
         }
     }
@@ -555,38 +580,38 @@ public class ExportService {
         if (!arr.isArray()||arr.size()==0) return;
         dHeading(doc, hl(label,"SKILLS"));
         List<String> list=new ArrayList<>();
-        for (JsonNode s:arr){String v=s.asText(""); if(!v.isBlank())list.add(v);}
+        for (JsonNode s:arr){String v=s.asString(""); if(!v.isBlank())list.add(v);}
         if (!list.isEmpty()) dBody(doc, join(list,"  ·  "));
     }
 
     private void docxList(XWPFDocument doc, String label, JsonNode arr) {
         if (!arr.isArray()||arr.size()==0) return;
         dHeading(doc, hl(label,"ACHIEVEMENTS"));
-        for (JsonNode a:arr){String v=a.asText(""); if(!v.isBlank()) dBullet(doc,v);}
+        for (JsonNode a:arr){String v=a.asString(""); if(!v.isBlank()) dBullet(doc,v);}
     }
 
     private void docxCertifications(XWPFDocument doc, String label, JsonNode arr) {
         if (!arr.isArray()||arr.size()==0) return;
         dHeading(doc, hl(label,"CERTIFICATIONS"));
         for (JsonNode c:arr){
-            String line=c.isTextual()?c.asText(""):certLine(c);
+            String line=c.isString()?c.asString(""):certLine(c);
             if (!line.isBlank()) dBody(doc,line);
         }
     }
 
     private void docxCustomSection(XWPFDocument doc, String label, JsonNode content) {
         if (content==null||content.isMissingNode()) return;
-        String mode=content.path("mode").asText("text");
+        String mode=content.path("mode").asString("text");
         if ("bullets".equals(mode)) {
             JsonNode items=content.path("items");
             if (!items.isArray()) return;
             List<String> list=new ArrayList<>();
-            for (JsonNode it:items){String v=it.asText("").trim(); if(!v.isBlank()) list.add(v);}
+            for (JsonNode it:items){String v=it.asString("").trim(); if(!v.isBlank()) list.add(v);}
             if (list.isEmpty()) return;
             dHeading(doc, label.toUpperCase());
             list.forEach(b -> dBullet(doc, b));
         } else {
-            String text=content.path("text").asText("").trim();
+            String text=content.path("text").asString("").trim();
             if (text.isBlank()) return;
             dHeading(doc, label.toUpperCase());
             dBody(doc, text);
@@ -598,6 +623,7 @@ public class ExportService {
        ================================================================ */
 
     public byte[] exportToTxt(User user, Long resumeId) {
+        enforceExportQuota(user);
         Resume resume = load(user, resumeId);
         StringBuilder t = new StringBuilder();
 
@@ -658,7 +684,7 @@ public class ExportService {
             if (!head.isBlank()){t.append(head); if(!dates.isBlank())t.append("  (").append(dates).append(")"); t.append("\n");}
             String meta=joinMeta(this.t(e,"location"),this.t(e,"employmentType")); if(!meta.isBlank()) t.append(meta).append("\n");
             if (!this.t(e,"summary").isBlank()) t.append(this.t(e,"summary")).append("\n");
-            for (JsonNode b:e.path("bullets")){String bl=b.asText(""); if(!bl.isBlank()) t.append("  - ").append(bl).append("\n");}
+            for (JsonNode b:e.path("bullets")){String bl=b.asString(""); if(!bl.isBlank()) t.append("  - ").append(bl).append("\n");}
             t.append("\n");
         }
     }
@@ -672,7 +698,7 @@ public class ExportService {
             if (!this.t(p,"techStack").isBlank()) t.append("Tech: ").append(this.t(p,"techStack")).append("\n");
             List<String> urls=parts(this.t(p,"link"),this.t(p,"github")); if(!urls.isEmpty()) t.append(join(urls,"  ·  ")).append("\n");
             if (!this.t(p,"description").isBlank()) t.append(this.t(p,"description")).append("\n");
-            for (JsonNode h:p.path("highlights")){String hl=h.asText(""); if(!hl.isBlank()) t.append("  - ").append(hl).append("\n");}
+            for (JsonNode h:p.path("highlights")){String hl=h.asString(""); if(!hl.isBlank()) t.append("  - ").append(hl).append("\n");}
             t.append("\n");
         }
     }
@@ -695,37 +721,37 @@ public class ExportService {
         if (!arr.isArray()||arr.size()==0) return;
         txtHeading(t, hl(label,"SKILLS"));
         List<String> list=new ArrayList<>();
-        for (JsonNode s:arr){String v=s.asText(""); if(!v.isBlank()) list.add(v);}
+        for (JsonNode s:arr){String v=s.asString(""); if(!v.isBlank()) list.add(v);}
         if (!list.isEmpty()) t.append(join(list,"  ·  ")).append("\n\n");
     }
 
     private void txtList(StringBuilder t, String label, JsonNode arr) {
         if (!arr.isArray()||arr.size()==0) return;
         txtHeading(t, hl(label,"ACHIEVEMENTS"));
-        for (JsonNode a:arr){String v=a.asText(""); if(!v.isBlank()) t.append("  - ").append(v).append("\n");}
+        for (JsonNode a:arr){String v=a.asString(""); if(!v.isBlank()) t.append("  - ").append(v).append("\n");}
         t.append("\n");
     }
 
     private void txtCertifications(StringBuilder t, String label, JsonNode arr) {
         if (!arr.isArray()||arr.size()==0) return;
         txtHeading(t, hl(label,"CERTIFICATIONS"));
-        for (JsonNode c:arr){String line=c.isTextual()?c.asText(""):certLine(c); if(!line.isBlank()) t.append(line).append("\n");}
+        for (JsonNode c:arr){String line=c.isString()?c.asString(""):certLine(c); if(!line.isBlank()) t.append(line).append("\n");}
         t.append("\n");
     }
 
     private void txtCustomSection(StringBuilder t, String label, JsonNode content) {
         if (content==null||content.isMissingNode()) return;
-        String mode=content.path("mode").asText("text");
+        String mode=content.path("mode").asString("text");
         if ("bullets".equals(mode)) {
             JsonNode items=content.path("items"); if(!items.isArray()) return;
             List<String> list=new ArrayList<>();
-            for (JsonNode it:items){String v=it.asText("").trim(); if(!v.isBlank()) list.add(v);}
+            for (JsonNode it:items){String v=it.asString("").trim(); if(!v.isBlank()) list.add(v);}
             if (list.isEmpty()) return;
             txtHeading(t, label.toUpperCase());
             list.forEach(b -> t.append("  - ").append(b).append("\n"));
             t.append("\n");
         } else {
-            String text=content.path("text").asText("").trim(); if(text.isBlank()) return;
+            String text=content.path("text").asString("").trim(); if(text.isBlank()) return;
             txtHeading(t, label.toUpperCase());
             t.append(text).append("\n\n");
         }
@@ -775,7 +801,7 @@ public class ExportService {
 
     private String t(JsonNode n, String field) {
         if (n==null||!n.hasNonNull(field)) return "";
-        String v=n.get(field).asText(""); return v==null?"":v.trim();
+        String v=n.get(field).asString(""); return v==null?"":v.trim();
     }
 
     private String dateRange(JsonNode n) {

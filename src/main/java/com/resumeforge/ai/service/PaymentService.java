@@ -120,10 +120,15 @@ public class PaymentService {
         payment.setStatus("COMPLETED");
         paymentRepository.save(payment);
 
-        // Activate premium immediately — don't wait for webhook
+        // Activate premium immediately — don't wait for webhook.
+        // SEC/BUS FIX: paid activation is PERMANENT, so premiumExpiresAt must be
+        // cleared — otherwise isPremium() (which now honors premiumExpiresAt)
+        // would treat a paying user as a time-limited referral user. Any stale
+        // referral expiry is overwritten by the explicit null.
         User dbUser = userRepository.findById(payment.getUserId())
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         dbUser.setPremium(true);
+        dbUser.setPremiumExpiresAt(null);
         userRepository.save(dbUser);
 
         // Send invoice if not already sent
@@ -159,7 +164,9 @@ public class PaymentService {
         User dbUser = userRepository.findById(user.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
+        // SEC/BUS FIX: paid activation is permanent — clear any referral expiry.
         dbUser.setPremium(true);
+        dbUser.setPremiumExpiresAt(null);
         userRepository.save(dbUser);
 
         if (!payment.isInvoiceSent()) {

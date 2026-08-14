@@ -1,10 +1,14 @@
 package com.resumeforge.ai.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.resumeforge.ai.dto.ApiResponse;
 import com.resumeforge.ai.entity.User;
+import com.resumeforge.ai.repository.AdFlowLogRepository;
+import com.resumeforge.ai.repository.AiUsageLogRepository;
 import com.resumeforge.ai.repository.ExportHistoryRepository;
 import com.resumeforge.ai.repository.PaymentRepository;
+import com.resumeforge.ai.repository.ReferralHistoryRepository;
+import com.resumeforge.ai.repository.ReferralRewardRepository;
 import com.resumeforge.ai.repository.ResumeRepository;
 import com.resumeforge.ai.repository.ResumeSnapshotRepository;
 import com.resumeforge.ai.repository.UserRepository;
@@ -40,6 +44,10 @@ public class UserController {
     @Autowired private ResumeSnapshotRepository  snapshotRepository;
     @Autowired private ExportHistoryRepository   exportHistoryRepository;
     @Autowired private PaymentRepository         paymentRepository;
+    @Autowired private ReferralHistoryRepository referralHistoryRepository;
+    @Autowired private ReferralRewardRepository  referralRewardRepository;
+    @Autowired private AiUsageLogRepository      aiUsageLogRepository;
+    @Autowired private AdFlowLogRepository       adFlowLogRepository;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -165,7 +173,22 @@ public class UserController {
         //    current decision: delete per GDPR right-to-erasure)
         paymentRepository.deleteByUserId(userId);
 
-        // 5. Delete the user record itself
+        // SEC/BUS FIX: these tables reference the user via non-cascading FKs
+        // (referral_history on both referrer_user_id and referred_user_id) or a
+        // plain userId column (ai_usage_log, ad_flow_log), so the user delete
+        // below previously failed with an FK violation. Clear them first.
+        // 5. Referral history (user may be either side of the relationship)
+        referralHistoryRepository.deleteByReferrerUser(user);
+        referralHistoryRepository.deleteByReferredUser(user);
+
+        // 6. Referral rewards earned by the user
+        referralRewardRepository.deleteByUser(user);
+
+        // 7. AI usage logs + ad flow logs
+        aiUsageLogRepository.deleteByUserId(userId);
+        adFlowLogRepository.deleteByUserId(userId);
+
+        // 8. Delete the user record itself
         userRepository.deleteById(userId);
 
         return ResponseEntity.ok(ApiResponse.success("Account and all associated data deleted successfully."));

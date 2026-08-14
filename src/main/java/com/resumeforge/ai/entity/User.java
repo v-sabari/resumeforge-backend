@@ -1,5 +1,6 @@
 package com.resumeforge.ai.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -25,6 +26,7 @@ public class User {
     @Column(nullable = false, unique = true, length = 160)
     private String email;
 
+    @JsonIgnore
     @Column(name = "password_hash", nullable = false, length = 255)
     private String passwordHash;
 
@@ -43,7 +45,9 @@ public class User {
     @Builder.Default
     private boolean emailVerified = false;
 
-    @Column(name = "email_otp", length = 20)
+    // SEC FIX: stores the SHA-256 hex digest of the emailed OTP (never the
+    // plaintext OTP). 64 hex chars — widened from 20 via migration V23.
+    @Column(name = "email_otp", length = 64)
     private String emailOtp;
 
     @Column(name = "email_otp_expires_at")
@@ -78,12 +82,39 @@ public class User {
     @Column(name = "token_issued_at")
     private Instant tokenIssuedAt;
 
+    /**
+     * SEC FIX: the password hash must never be serialized into any JSON
+     * response (e.g. if a User were ever returned directly). Lombok's @Getter
+     * would normally generate getPasswordHash(); we shadow it here with an
+     * explicitly @JsonIgnore-annotated getter so Jackson always skips it.
+     */
+    @JsonIgnore
+    public String getPasswordHash() {
+        return this.passwordHash;
+    }
+
+    @JsonIgnore
     public String getPassword() {
         return this.passwordHash;
     }
 
     public void setPassword(String password) {
         this.passwordHash = password;
+    }
+
+    /**
+     * SEC FIX: premium status must respect premiumExpiresAt. Referral rewards
+     * grant time-limited premium (3/30 days) by setting premiumExpiresAt, but
+     * the raw {@code premium} flag was read directly everywhere — so referral
+     * premium was effectively lifetime. isPremium() is the single source of
+     * truth used by every service (ExportService, AiService, AuthService,
+     * PaymentService, AdminService) and now returns false once a set expiry
+     * has passed. A null expiry means permanent premium (paid/admin grant).
+     */
+    public boolean isPremium() {
+        if (!this.premium) return false;
+        if (this.premiumExpiresAt == null) return true;
+        return this.premiumExpiresAt.isAfter(Instant.now());
     }
 
     public boolean isHasCreatedResume() {

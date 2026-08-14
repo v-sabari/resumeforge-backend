@@ -13,6 +13,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.LocalDateTime;
 
@@ -40,6 +43,10 @@ public class AuthService {
             throw new BadRequestException("Email already registered");
         }
 
+        // SEC FIX: only the SHA-256 digest of the OTP is persisted, never the
+        // plaintext. The plaintext goes out in the email and is gone from the DB.
+        String otp = OtpUtil.generateOtp();
+
         User user = User.builder()
                 .name(request.getName())
                 .email(request.getEmail())
@@ -47,7 +54,7 @@ public class AuthService {
                 .role("USER")
                 .premium(false)
                 .emailVerified(false)
-                .emailOtp(OtpUtil.generateOtp())
+                .emailOtp(sha256Hex(otp))
                 .emailOtpExpiresAt(LocalDateTime.now().plusMinutes(10))
                 .build();
 
@@ -56,7 +63,7 @@ public class AuthService {
         referralService.ensureReferralCode(user);
         referralService.attachReferralAtSignup(user, request.getReferralCode());
 
-        emailService.sendVerificationEmail(user.getEmail(), user.getEmailOtp());
+        emailService.sendVerificationEmail(user.getEmail(), otp);
         return ApiResponse.success("Registration successful. Please check your email for OTP.");
     }
 
@@ -69,7 +76,9 @@ public class AuthService {
             throw new BadRequestException("Email already verified");
         }
 
-        if (user.getEmailOtp() == null || !user.getEmailOtp().equals(request.getOtp())) {
+        // SEC FIX: compare digests in constant time (MessageDigest.isEqual) so
+        // the comparison does not leak how many leading characters match.
+        if (user.getEmailOtp() == null || !constantTimeOtpMatches(request.getOtp(), user.getEmailOtp())) {
             throw new BadRequestException("Invalid OTP");
         }
 
@@ -101,11 +110,12 @@ public class AuthService {
             throw new BadRequestException("Email already verified");
         }
 
-        user.setEmailOtp(OtpUtil.generateOtp());
+        String otp = OtpUtil.generateOtp();
+        user.setEmailOtp(sha256Hex(otp));
         user.setEmailOtpExpiresAt(LocalDateTime.now().plusMinutes(10));
         userRepository.save(user);
 
-        emailService.sendVerificationEmail(user.getEmail(), user.getEmailOtp());
+        emailService.sendVerificationEmail(user.getEmail(), otp);
         return ApiResponse.success("OTP resent successfully");
     }
 
@@ -143,7 +153,9 @@ public class AuthService {
         // so an attacker cannot determine account existence from the response.
         userRepository.findByEmail(request.getEmail()).ifPresent(user -> {
             String resetToken = TokenUtil.generateToken();
-            user.setPasswordResetToken(resetToken);
+            // SEC FIX: store only the SHA-256 digest; the raw token is emailed
+            // and can never be recovered from the DB.
+            user.setPasswordResetToken(sha256Hex(resetToken));
             user.setPasswordResetExpiresAt(LocalDateTime.now().plusHours(1));
             userRepository.save(user);
             emailService.sendPasswordResetEmail(user.getEmail(), resetToken);
@@ -157,7 +169,9 @@ public class AuthService {
     // a blocklist or waiting up to 24 h for old tokens to expire naturally.
     @Transactional
     public ApiResponse resetPassword(ResetPasswordRequest request) {
-        User user = userRepository.findByPasswordResetToken(request.getToken())
+        // SEC FIX: the reset token stored in the DB is the SHA-256 digest, so
+        // look up by the digest of the presented token.
+        User user = userRepository.findByPasswordResetToken(sha256Hex(request.getToken()))
                 .orElseThrow(() -> new BadRequestException("Invalid or expired reset token"));
 
         if (user.getPasswordResetExpiresAt() == null || user.getPasswordResetExpiresAt().isBefore(LocalDateTime.now())) {
@@ -189,5 +203,29 @@ public class AuthService {
                 // UX-05 FIX: include createdAt so "Member since" shows correctly on ProfilePage
                 .createdAt(user.getCreatedAt())
                 .build();
+    }
+
+    private String sha256Hex(String value) {
+        if (value == null) return null;
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(hash.length * 2);
+            for (byte b : hash) {
+                sb.append(Character.forDigit((b >> 4) & 0xF, 16));
+                sb.append(Character.forDigit(b & 0xF, 16));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is not available", e);
+        }
+    }
+
+    private boolean constantTimeOtpMatches(String rawOtp, String storedDigest) {
+        if (rawOtp == null || storedDigest == null) return false;
+        String candidate = sha256Hex(rawOtp);
+        return MessageDigest.isEqual(
+                candidate.getBytes(StandardCharsets.UTF_8),
+                storedDigest.getBytes(StandardCharsets.UTF_8));
     }
 }

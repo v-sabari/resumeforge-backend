@@ -216,12 +216,27 @@ public class ReferralService {
         if (milestone.rewardType() == ReferralReward.RewardType.PREMIUM_DAYS_3 ||
                 milestone.rewardType() == ReferralReward.RewardType.PREMIUM_DAYS_30) {
 
+            // SEC/BUS FIX: isPremium() now honors premiumExpiresAt, so the grant
+            // logic below must never downgrade an existing PERMANENT premium
+            // (paid or admin-granted, expiry == null) to a time-limited one.
+            // Capture permanence BEFORE setPremium(true) flips the raw flag.
+            boolean alreadyPermanent = referrer.isPremium();
+
             referrer.setPremium(true);
 
             Instant currentExpiry = referrer.getPremiumExpiresAt();
-            Instant base = (currentExpiry != null && currentExpiry.isAfter(now)) ? currentExpiry : now;
 
-            referrer.setPremiumExpiresAt(base.plus(milestone.duration()));
+            if (currentExpiry != null) {
+                // Existing time-limited premium — extend from the later of
+                // (current expiry, now) so stacked rewards accumulate.
+                Instant base = currentExpiry.isAfter(now) ? currentExpiry : now;
+                referrer.setPremiumExpiresAt(base.plus(milestone.duration()));
+            } else if (!alreadyPermanent) {
+                // Free user's first reward — start a fresh time-limited window.
+                referrer.setPremiumExpiresAt(now.plus(milestone.duration()));
+            }
+            // else: permanent premium stays permanent — expiry remains null.
+
             userRepository.save(referrer);
         }
     }

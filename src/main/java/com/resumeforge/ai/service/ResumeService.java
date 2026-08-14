@@ -1,6 +1,6 @@
 package com.resumeforge.ai.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.resumeforge.ai.dto.ResumeRequest;
 import com.resumeforge.ai.dto.ResumeResponse;
 import com.resumeforge.ai.dto.SnapshotResponse;
@@ -125,9 +125,12 @@ public class ResumeService {
             resume = resumeRepository.save(resume);
             log.info("updateResume SUCCESS resumeId={} updatedAt={}", id, resume.getUpdatedAt());
         } catch (DataIntegrityViolationException ex) {
+            // SEC FIX: root cause (constraint/column names) is logged server-side
+            // but never echoed to the client — it leaks schema internals.
             log.error("updateResume DB_CONSTRAINT_VIOLATION resumeId={}", id, ex);
             throw new BadRequestException(
-                    "Resume update failed due to a data constraint violation. Detail: " + rootCause(ex));
+                    "Resume update failed due to a data constraint violation. " +
+                    "Check required fields and value lengths.");
         } catch (ConstraintViolationException ex) {
             log.error("updateResume CONSTRAINT_VIOLATION resumeId={}", id, ex);
             throw new BadRequestException(
@@ -304,11 +307,5 @@ public class ResumeService {
                 .label(label)
                 .createdAt(snapshot.getCreatedAt())
                 .build();
-    }
-
-    private String rootCause(Throwable ex) {
-        Throwable cause = ex;
-        while (cause.getCause() != null) cause = cause.getCause();
-        return cause.getMessage();
     }
 }

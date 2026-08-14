@@ -6,10 +6,22 @@
     <modelVersion>4.0.0</modelVersion>
 
     <!-- ── Spring Boot parent ────────────────────────────────────────────── -->
+    <!--
+        SPRING BOOT 4.x UPGRADE (was 3.2.5):
+        Spring Boot 3.2.x reached end of OSS support, so we moved to the latest
+        stable 4.x line (4.1.0). Major-version changes that shipped with this:
+          - Jackson 3 (groupId tools.jackson.core, package tools.jackson.databind)
+          - Spring Security 7 (SecurityFilterChain DSL unchanged here)
+          - Spring Data 2026.0 / Hibernate 7
+          - Tomcat 11, Jakarta Servlet 6.1, Flyway 12 (managed by Boot BOM)
+        NOTE: requires a staging deploy + smoke test before promotion (runtime
+        behavior of Security 7 / Jackson 3 / Hibernate 7 is not fully covered by
+        a compile-only verification).
+    -->
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.2.5</version>
+        <version>4.1.0</version>
         <relativePath/>
     </parent>
 
@@ -24,10 +36,19 @@
         <java.version>21</java.version>
         <!-- Library versions pinned for reproducible builds -->
         <pdfbox.version>3.0.2</pdfbox.version>
-        <poi.version>5.2.5</poi.version>
+        <!-- SEC FIX: 5.2.5 is vulnerable to CVE-2025-31672 (zip duplicate-name
+             entry data mismatch in poi-ooxml). Fixed in 5.4.0. -->
+        <poi.version>5.4.0</poi.version>
         <jjwt.version>0.12.5</jjwt.version>
         <razorpay.version>1.4.5</razorpay.version>
         <commons-codec.version>1.17.0</commons-codec.version>
+        <!--
+            BOOT 4 CHANGE: Spring Boot 4.x removed spring-retry from its BOM
+            (spring-retry is now community-maintained under spring-attic), so
+            the version MUST be declared explicitly here. 2.0.13 is the latest
+            release (Jun 2026), with no known CVEs.
+        -->
+        <spring-retry.version>2.0.13</spring-retry.version>
         <!--
             FIX: Lombok version must be declared explicitly here.
 
@@ -38,9 +59,9 @@
             those are resolved independently by maven-compiler-plugin BEFORE
             the BOM is consulted for annotation processors.
 
-            Spring Boot 3.2.5 manages Lombok at 1.18.32.
-            We declare it here as a property so both the <dependency> entry
-            (which could rely on BOM but is now explicit) and the
+            Spring Boot 3.2.5 managed Lombok at 1.18.32; the Boot 4.1 parent
+            manages a newer version via its own property. We override it here
+            with an explicit pin so both the <dependency> entry and the
             <annotationProcessorPath> entry always use the exact same version,
             making it impossible for them to drift apart.
         -->
@@ -79,7 +100,7 @@
         <!--
             MYSQL MIGRATION (was org.postgresql:postgresql):
             Switched to MySQL Connector/J for AWS RDS MySQL 8.0.
-            Spring Boot 3.2.5's BOM manages the version — no <version> needed.
+            The Spring Boot BOM manages the version — no <version> needed.
             groupId is "com.mysql" (Connector/J 8.1+); older tutorials/artifacts
             using "mysql:mysql-connector-java" are the legacy pre-8.1 coordinates
             and should NOT be mixed with this one.
@@ -93,14 +114,21 @@
         <!-- ── Flyway migrations ─────────────────────────────────────────── -->
         <!--
             MYSQL MIGRATION NOTE:
-            Flyway 9.x (managed by Spring Boot 3.2.5's BOM at 9.22.3) requires
-            an explicit database-specific module for MySQL, unlike Postgres
-            (which is built into flyway-core in the 9.x line). Without this,
-            Flyway throws "Unsupported Database: MySQL 8.0" at startup.
+            Flyway requires an explicit database-specific module for MySQL,
+            unlike Postgres (which is built into flyway-core). Without this,
+            Flyway throws "Unsupported Database: MySQL" at startup.
+
+            BOOT 4 CHANGE: Flyway's auto-configuration moved out of
+            spring-boot-autoconfigure into a dedicated module (spring-boot-flyway).
+            Declaring the raw flyway-core dependency NO LONGER activates the
+            auto-configuration — you must use the spring-boot-starter-flyway
+            starter (which pulls spring-boot-flyway + flyway-core). Without it,
+            Flyway would silently not run at startup and DB migrations would
+            never be applied.
         -->
         <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-core</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-flyway</artifactId>
         </dependency>
         <dependency>
             <groupId>org.flywaydb</groupId>
@@ -193,10 +221,21 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- ── Jackson (already on classpath via spring-boot-starter-web,  -->
-        <!--   listed explicitly for clarity and version control)           -->
+        <!-- ── Jackson (JSON serialization) ───────────────────────────────── -->
+        <!--
+            BOOT 4 / JACKSON 3 UPGRADE:
+            Application code now uses Jackson 3 (groupId tools.jackson.core,
+            package tools.jackson.databind). Version is managed by the Spring
+            Boot 4.1.0 BOM — no <version> tag needed.
+            jackson-annotations (com.fasterxml.jackson.core:jackson-annotations)
+            is UNCHANGED in Jackson 3 (@JsonIgnore/@JsonInclude stay as-is) and
+            arrives transitively via jackson-databind 3.
+            Jackson 2 databind (com.fasterxml.jackson.core:jackson-databind) is
+            still on the runtime classpath via jjwt-jackson and remains managed
+            by Boot's Jackson 2 BOM — no explicit entry needed.
+        -->
         <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
+            <groupId>tools.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
         </dependency>
 
@@ -212,11 +251,14 @@
             proxy entirely, making @Retryable silently do nothing.
             RetryTemplate invoked directly inside the method works correctly.
 
-            Spring Boot 3.2.5 BOM manages spring-retry — no version needed.
+            BOOT 4 CHANGE: Spring Boot 4.x dropped spring-retry from its BOM,
+            so the version is pinned explicitly via the spring-retry.version
+            property (2.0.13 — latest release, no known CVEs).
         -->
         <dependency>
             <groupId>org.springframework.retry</groupId>
             <artifactId>spring-retry</artifactId>
+            <version>${spring-retry.version}</version>
         </dependency>
         <!--
             spring-retry requires spring-aspects for @EnableRetry AOP support.

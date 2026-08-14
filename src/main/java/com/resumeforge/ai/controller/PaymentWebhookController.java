@@ -1,7 +1,7 @@
 package com.resumeforge.ai.controller;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.resumeforge.ai.entity.Payment;
 import com.resumeforge.ai.repository.PaymentRepository;
 import com.resumeforge.ai.repository.UserRepository;
@@ -68,7 +68,7 @@ public class PaymentWebhookController {
 
         try {
             JsonNode event = objectMapper.readTree(rawBody);
-            String eventType = event.path("event").asText("");
+            String eventType = event.path("event").asString("");
 
             switch (eventType) {
                 case "payment.captured" -> handlePaymentCaptured(event);
@@ -91,8 +91,8 @@ public class PaymentWebhookController {
 
         JsonNode paymentEntity = event.path("payload").path("payment").path("entity");
 
-        String orderId = paymentEntity.path("order_id").asText(null);
-        String paymentId = paymentEntity.path("id").asText(null);
+        String orderId = paymentEntity.path("order_id").asString(null);
+        String paymentId = paymentEntity.path("id").asString(null);
         int amount = paymentEntity.path("amount").asInt(0);
 
         if (orderId == null || paymentId == null) return;
@@ -115,7 +115,7 @@ public class PaymentWebhookController {
             payment.setRazorpayPaymentId(paymentId);
             payment.setStatus("COMPLETED");
             payment.setPaymentMethod(
-                    paymentEntity.path("method").asText("unknown")
+                    paymentEntity.path("method").asString("unknown")
             );
 
             paymentRepository.save(payment);
@@ -147,7 +147,7 @@ public class PaymentWebhookController {
     private void handlePaymentFailed(JsonNode event) {
 
         JsonNode paymentEntity = event.path("payload").path("payment").path("entity");
-        String orderId = paymentEntity.path("order_id").asText(null);
+        String orderId = paymentEntity.path("order_id").asString(null);
 
         if (orderId == null) return;
 

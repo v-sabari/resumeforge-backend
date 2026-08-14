@@ -45,3 +45,13 @@ logs/
 .elasticbeanstalk/*
 !.elasticbeanstalk/*.cfg.yml
 !.elasticbeanstalk/*.global.yml
+
+# Root-level scratch/junk files (removed from the repo — keep them out)
+src.zip
+update-report.txt
+resumeforge.session.sql
+db-connection-test.js
+graceful-shutdown-test.js
+health-check-load-test.js
+load-test.js
+stress-test.js

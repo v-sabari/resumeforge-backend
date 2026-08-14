@@ -26,6 +26,9 @@ public class EmailService {
     @Value("${app.contact.receiver-email}")
     private String contactReceiverEmail;
 
+    @Value("${app.frontend.base-url}")
+    private String frontendBaseUrl;
+
     private final RestTemplate restTemplate = new RestTemplate();
     private static final String RESEND_API_URL = "https://api.resend.com/emails";
 
@@ -37,7 +40,9 @@ public class EmailService {
 
     public void sendPasswordResetEmail(String toEmail, String resetToken) {
         String subject = "Reset Your Password - ResumeForge AI";
-        String resetLink = "https://www.resumeforgeai.site/reset-password?token=" + resetToken;
+        // SEC FIX: build the reset link from configured frontend base URL instead
+        // of a hardcoded production domain (breaks on custom domain / local dev).
+        String resetLink = frontendBaseUrl.replaceAll("/+$", "") + "/reset-password?token=" + resetToken;
         String html = buildPasswordResetEmailHtml(resetLink);
         sendEmail(toEmail, subject, html);
     }
@@ -230,6 +235,11 @@ public class EmailService {
     }
 
     private String buildContactNotificationHtml(String name, String email, String message) {
+        // SEC FIX: escape HTML metacharacters so a crafted contact message
+        // cannot inject markup/scripts into the admin notification email.
+        String safeName = escapeHtml(name);
+        String safeEmail = escapeHtml(email);
+        String safeMessage = escapeHtml(message);
         return """
             <!DOCTYPE html>
             <html>
@@ -245,6 +255,16 @@ public class EmailService {
                 <p>%s</p>
             </body>
             </html>
-            """.formatted(name, email, message);
+            """.formatted(safeName, safeEmail, safeMessage);
+    }
+
+    private String escapeHtml(String value) {
+        if (value == null) return "";
+        return value
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
     }
 }

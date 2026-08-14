@@ -1,6 +1,6 @@
 package com.resumeforge.ai.security;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.resumeforge.ai.dto.ApiResponse;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -50,6 +50,13 @@ public class SecurityConfig {
     @Bean
     public LoginRateLimitFilter loginRateLimitFilter() {
         return new LoginRateLimitFilter();
+    }
+
+    // SEC FIX: rate-limit OTP verification / resend, password reset and contact
+    // endpoints per IP so they cannot be spammed or brute-forced.
+    @Bean
+    public SensitiveEndpointRateLimitFilter sensitiveEndpointRateLimitFilter() {
+        return new SensitiveEndpointRateLimitFilter();
     }
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -105,6 +112,7 @@ public class SecurityConfig {
                 // same built-in filter correctly places loginRateLimitFilter
                 // ahead of jwtAuthenticationFilter in the chain.
                 .addFilterBefore(loginRateLimitFilter(), UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(sensitiveEndpointRateLimitFilter(), UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

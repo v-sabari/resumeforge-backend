@@ -1,6 +1,6 @@
 package com.resumeforge.ai.controller;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import com.resumeforge.ai.dto.AiRequest;
 import com.resumeforge.ai.dto.ApiResponse;
 import com.resumeforge.ai.entity.User;

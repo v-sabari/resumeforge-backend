@@ -42,7 +42,7 @@ public class ExportController {
     }
 
     @PostMapping("/record")
-    public ResponseEntity<ApiResponse> recordExport(
+    public ResponseEntity<ExportStatusResponse> recordExport(
             @AuthenticationPrincipal User user,
             @Valid @RequestBody ExportRecordRequest request) {
         return ResponseEntity.ok(exportService.recordExport(user, request));

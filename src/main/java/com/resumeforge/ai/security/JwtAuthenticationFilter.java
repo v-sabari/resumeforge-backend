@@ -71,9 +71,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     ) throws ServletException, IOException {
 
         final String jwt = resolveToken(request);
-        log.info("========== JWT FILTER ==========");
-        log.info("URI: {}", request.getRequestURI());
-        log.info("JWT exists: {}", jwt != null);
+        log.debug("JWT filter: uri={} tokenPresent={}", request.getRequestURI(), jwt != null);
         if (jwt == null) {
             filterChain.doFilter(request, response);
             return;
@@ -81,12 +79,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         try {
             String email = jwtUtil.extractEmail(jwt);
-            log.info("Email extracted: {}", email);
+            log.debug("JWT filter: email extracted for authentication attempt");
             if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 User user = userRepository.findByEmail(email).orElse(null);
-                log.info("User exists: {}", user != null);
+                log.debug("JWT filter: user found={}", user != null);
                 boolean valid = jwtUtil.validateToken(jwt, email);
-                log.info("JWT valid: {}", valid);
+                log.debug("JWT filter: token valid={}", valid);
                 if (user != null && valid){
 
                     // B3 fix: reject tokens issued before the user's security watermark.
@@ -95,13 +93,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     Instant tokenIat = jwtUtil.extractIssuedAt(jwt);
                     Instant watermark = user.getTokenIssuedAt();
 
-                    log.info("Token issued at : {}", tokenIat);
-                    log.info("User watermark : {}", watermark);
-                    log.info("JWT expires at : {}", jwtUtil.extractExpiration(jwt));
+                    log.debug("JWT filter: tokenIssuedAt={} watermark={} expiresAt={}",
+                            tokenIat, watermark, jwtUtil.extractExpiration(jwt));
 
                     if (watermark != null && tokenIat.isBefore(watermark)) {
-                        log.warn("Rejected token for user={} — issued at {} which is before watermark {}",
-                                email, tokenIat, watermark);
+                        log.warn("Rejected token on {} — issued before the user's security watermark", request.getRequestURI());
                         filterChain.doFilter(request, response);
                         return;
                     }

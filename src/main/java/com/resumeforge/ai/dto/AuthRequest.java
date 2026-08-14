@@ -12,6 +12,8 @@ public class AuthRequest {
     private String email;
 
     @NotBlank(message = "Password is required")
-    @Size(min = 6, message = "Password must be at least 6 characters")
+    // SEC FIX: mirror RegisterRequest — BCrypt truncates at 72 bytes, so a longer
+    // password would only ever be compared against its first 72 bytes.
+    @Size(min = 6, max = 72, message = "Password must be between 6 and 72 characters")
     private String password;
 }

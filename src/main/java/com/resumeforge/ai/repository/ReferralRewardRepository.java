@@ -10,4 +10,8 @@ import java.util.Optional;
 public interface ReferralRewardRepository extends JpaRepository<ReferralReward, Long> {
     List<ReferralReward> findByUserOrderByGrantedAtDesc(User user);
     Optional<ReferralReward> findByUserAndMilestoneCount(User user, Integer milestoneCount);
+
+    // SEC/BUS FIX: needed for GDPR account deletion (referral_rewards has a
+    // non-cascading FK to users).
+    long deleteByUser(User user);
 }

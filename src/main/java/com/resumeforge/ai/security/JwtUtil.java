@@ -3,6 +3,7 @@ package com.resumeforge.ai.security;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -22,6 +23,23 @@ public class JwtUtil {
 
     @Value("${app.jwt.expiration-ms}")
     private Long expirationMs;
+
+    // SEC FIX: fail fast at startup instead of silently signing tokens with an
+    // empty or too-short key. Empty default + empty env would otherwise produce
+    // an IllegalArgumentException only at runtime on the first request.
+    @PostConstruct
+    public void validateConfig() {
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException(
+                    "app.jwt-secret / APP_JWT_SECRET is not set. Set it to a random value of at least 32 bytes.");
+        }
+        if (secret.getBytes(StandardCharsets.UTF_8).length < 32) {
+            throw new IllegalStateException(
+                    "app.jwt-secret is too short ("
+                            + secret.getBytes(StandardCharsets.UTF_8).length
+                            + " bytes). HMAC-SHA256 requires a key of at least 32 bytes.");
+        }
+    }
 
     private SecretKey getSigningKey() {
         return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));

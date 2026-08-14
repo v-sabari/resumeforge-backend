@@ -25,4 +25,8 @@ public interface AiUsageLogRepository extends JpaRepository<AiUsageLog, Long> {
     @Query("SELECT COALESCE(SUM(a.inputTokens),0) + COALESCE(SUM(a.outputTokens),0) " +
             "FROM AiUsageLog a WHERE a.createdAt > :after")
     long sumTokensAfter(@Param("after") LocalDateTime after);
+
+    // SEC/BUS FIX: needed for GDPR account deletion (ai_usage_log has a plain
+    // userId column with a non-cascading FK to users).
+    long deleteByUserId(Long userId);
 }
