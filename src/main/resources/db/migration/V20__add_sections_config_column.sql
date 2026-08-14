@@ -1,6 +1,6 @@
 -- V20: Adds sections_config column to support fully customizable resume
 -- sections (add / remove / rename / reorder / show-hide / duplicate).
--- Rewritten for MySQL 8.0 (originally PostgreSQL).
+-- PostgreSQL syntax (target database is Neon PostgreSQL 17.x).
 --
 -- sections_config is a JSON array, ordered by the user's chosen display
 -- order, describing EVERY section in the resume (both standard sections
@@ -30,11 +30,15 @@
 -- NULL is allowed: when absent, the application falls back to a built-in
 -- default ordering so existing resumes created before this migration
 -- continue to render unchanged.
--- MYSQL NOTE: "ADD COLUMN IF NOT EXISTS" is not valid MySQL syntax. Removed
--- since this is a fresh column add.
+--
+-- Uses JSONB (not JSON) to match the type used by every other JSON column
+-- in this schema (personal_info, experience, education, skills, etc. in
+-- V1__initial_schema.sql) — JSONB also supports indexing/containment
+-- queries that plain JSON does not.
 ALTER TABLE resumes
-    ADD COLUMN sections_config JSON;
+    ADD COLUMN IF NOT EXISTS sections_config JSONB;
 
-ALTER TABLE resumes
-    MODIFY COLUMN sections_config JSON COMMENT
+-- PostgreSQL has no inline COMMENT clause on ALTER COLUMN/ADD COLUMN;
+-- column comments are set with a separate COMMENT ON COLUMN statement.
+COMMENT ON COLUMN resumes.sections_config IS
     'Ordered list of section descriptors controlling section order, visibility, and labels for both standard and custom sections. NULL = use default ordering.';
