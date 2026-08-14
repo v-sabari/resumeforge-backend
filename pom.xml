@@ -66,6 +66,26 @@
             making it impossible for them to drift apart.
         -->
         <lombok.version>1.18.32</lombok.version>
+        <!--
+            FLYWAY FIX (added):
+            Root cause of startup failure:
+              "FlywayException: Unsupported Database: PostgreSQL 17.10"
+            The Flyway version pulled in transitively by the Spring Boot 4.1.0
+            BOM predates official certification for PostgreSQL 17.10 (Neon runs
+            17.10). Flyway hard-checks the connected DB version against its own
+            supported-version list and refuses to run migrations if it doesn't
+            recognize it — which happens during ApplicationContext startup,
+            before the EntityManagerFactory bean is created. That's why the
+            error surfaces as a cascading BeanCreationException on
+            'jpaSharedEM_entityManagerFactory' / 'userRepository' /
+            'jwtAuthenticationFilter' even though those beans aren't the real
+            problem.
+
+            Fix: pin Flyway explicitly to a release with certified PostgreSQL
+            17.x support, overriding whatever older version the Boot BOM
+            manages. 13.1.0 is current stable as of Aug 2026.
+        -->
+        <flyway.version>13.1.0</flyway.version>
     </properties>
 
     <dependencies>
@@ -98,12 +118,9 @@
 
         <!-- ── Database ──────────────────────────────────────────────────── -->
         <!--
-            MYSQL MIGRATION (was org.postgresql:postgresql):
-            Switched to MySQL Connector/J for AWS RDS MySQL 8.0.
+            POSTGRESQL CONFIGURATION:
+            Switched to PostgreSQL Driver.
             The Spring Boot BOM manages the version — no <version> needed.
-            groupId is "com.mysql" (Connector/J 8.1+); older tutorials/artifacts
-            using "mysql:mysql-connector-java" are the legacy pre-8.1 coordinates
-            and should NOT be mixed with this one.
         -->
         <dependency>
             <groupId>org.postgresql</groupId>
@@ -113,18 +130,15 @@
 
         <!-- ── Flyway migrations ─────────────────────────────────────────── -->
         <!--
-            MYSQL MIGRATION NOTE:
-            Flyway requires an explicit database-specific module for MySQL,
-            unlike Postgres (which is built into flyway-core). Without this,
-            Flyway throws "Unsupported Database: MySQL" at startup.
+            POSTGRESQL CONFIGURATION:
+            Flyway requires an explicit database-specific module for PostgreSQL since Flyway 10+.
+            We use spring-boot-starter-flyway to activate auto-configuration,
+            and add the flyway-database-postgresql module.
 
-            BOOT 4 CHANGE: Flyway's auto-configuration moved out of
-            spring-boot-autoconfigure into a dedicated module (spring-boot-flyway).
-            Declaring the raw flyway-core dependency NO LONGER activates the
-            auto-configuration — you must use the spring-boot-starter-flyway
-            starter (which pulls spring-boot-flyway + flyway-core). Without it,
-            Flyway would silently not run at startup and DB migrations would
-            never be applied.
+            FLYWAY FIX (added): both flyway-core (transitive) and
+            flyway-database-postgresql are pinned to ${flyway.version} to
+            override the Boot BOM's older, PostgreSQL-17.10-incompatible
+            version. See the property comment above for the full explanation.
         -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -132,7 +146,13 @@
         </dependency>
         <dependency>
             <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-mysql</artifactId>
+            <artifactId>flyway-core</artifactId>
+            <version>${flyway.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+            <version>${flyway.version}</version>
         </dependency>
 
         <!-- ── JWT ───────────────────────────────────────────────────────── -->
