@@ -420,14 +420,44 @@ public class AiService {
     // "respond with ONLY this JSON schema" instruction so the model's
     // output can be parsed straight into the shape AIActionPanel.jsx expects.
 
+    // REWRITE-01: dedicated prompt for the improved Rewrite Text feature.
+    // It rewrites only the user-provided text for the chosen resume section in
+    // the chosen style, with strict no-invention rules. The old prompt's
+    // "quantify achievements where possible" implicitly encouraged the model
+    // to fabricate metrics; the new prompt forbids adding any fact, number, or
+    // skill that was not present in the user's original text.
     private String buildRewritePrompt(AiRequest r) {
-        return "Rewrite the following resume text to be more professional, impactful, and " +
-                "ATS-friendly for a \"" + orEmpty(r.getTargetRole()) + "\" role, in a " +
-                orEmpty(r.getTone()) + " tone. Use strong action verbs and quantify " +
-                "achievements where possible.\n\n" +
-                "Original text:\n" + orEmpty(r.getText()) + "\n\n" +
-                "Respond with ONLY valid JSON matching exactly this schema, no other text:\n" +
-                "{\"text\": \"the rewritten text\"}";
+        String section = orEmpty(r.getResumeSection());
+        if (!hasText(section)) section = "Other";
+        String style = orEmpty(r.getRewriteStyle());
+        if (!hasText(style)) style = "Professional";
+
+        return "You are an expert professional resume writer. Rewrite the following " +
+            "resume text for the \"" + section + "\" section, in a \"" + style + "\" style. " +
+            "Make it clear, concise, professional, and ATS-friendly.\n\n" +
+            "=== User-provided original text ===\n" +
+            orEmpty(r.getText()) + "\n\n" +
+            "=== Task ===\n" +
+            "Rewrite the text so that:\n" +
+            "- Grammar and sentence structure are improved.\n" +
+            "- Wording is clear, strong, and professional for a resume.\n" +
+            "- The text is concise and easy to read (ATS-friendly).\n" +
+            "- The original meaning and every fact are preserved exactly.\n" +
+            "- The style matches the requested \"" + style + "\" style.\n\n" +
+            "=== CRITICAL — No-Invention Rules (do not violate) ===\n" +
+            "- Use ONLY the words, facts, and information in the original text.\n" +
+            "- NEVER add or invent information.\n" +
+            "- NEVER add new skills, technologies, certifications, or tools.\n" +
+            "- NEVER invent achievements, responsibilities, experience, or dates.\n" +
+            "- NEVER invent numbers, percentages, metrics, or results.\n" +
+            "- Example: \"Created a website using React.\" must become something like " +
+            "\"Developed a website using React.\" — never \"Increased user engagement by 40%\" " +
+            "because that number was not provided.\n" +
+            "- Avoid unnecessary buzzwords; keep language direct and professional.\n\n" +
+            "=== Output format ===\n" +
+            "Respond with ONLY valid JSON matching exactly this schema, no other text (no " +
+            "Markdown, no code fences, no surrounding prose):\n" +
+            "{\"originalText\":\"<the exact original text you were given>\",\"rewrittenText\":\"<only the rewritten text>\"}";
     }
 
     // BULLETS-01: reworked prompt for the improved Bullet Points feature.

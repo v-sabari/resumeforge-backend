@@ -60,4 +60,11 @@ public class AiRequest {
     private String resumeInformation; // Resume content / sections the user pastes
     private String skillCategory;     // Technical Skills / Programming Languages /
                                       // Frameworks / Databases / Tools / Cloud / Soft / All
+
+    // REWRITE-01: dedicated fields for the improved Rewrite Text feature.
+    // The form collects the resume section being rewritten and the rewrite
+    // style the user wants. The AI may only restate/improve the provided text —
+    // it must never invent metrics, skills, or experience.
+    private String resumeSection;     // Summary / Experience / Project / Education / Skills / Other
+    private String rewriteStyle;      // Professional / Concise / ATS-Friendly / Stronger wording
 }
