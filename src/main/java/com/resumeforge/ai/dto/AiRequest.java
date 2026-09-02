@@ -67,4 +67,11 @@ public class AiRequest {
     // it must never invent metrics, skills, or experience.
     private String resumeSection;     // Summary / Experience / Project / Education / Skills / Other
     private String rewriteStyle;      // Professional / Concise / ATS-Friendly / Stronger wording
+
+    // ATS-01: complete resume content for real ATS scoring. The frontend
+    // composes the full resume (all sections) into one text blob so the AI can
+    // evaluate keyword/skill/experience/education alignment against the job
+    // description. The AI returns individual factor scores (0-100); the
+    // backend computes the weighted final score.
+    private String resumeText;
 }

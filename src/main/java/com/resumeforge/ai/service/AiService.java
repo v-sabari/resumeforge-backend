@@ -2,6 +2,7 @@ package com.resumeforge.ai.service;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 import com.resumeforge.ai.dto.AiRequest;
 import com.resumeforge.ai.entity.AiUsageLog;
 import com.resumeforge.ai.entity.User;
@@ -202,7 +203,55 @@ public class AiService {
     }
 
     public JsonNode atsScore(User user, AiRequest request) {
-        return callOpenRouter(user, "ats_score", buildAtsScorePrompt(request));
+        // ATS-01: the AI returns the six factor scores (0-100) plus keyword and
+        // advisory data. The AI is NOT allowed to decide the overall score — the
+        // backend computes the weighted final score from the factors below.
+        JsonNode analysis = callOpenRouter(user, "ats_score", buildAtsScorePrompt(request));
+
+        if (analysis instanceof ObjectNode node) {
+            int keyword  = clampScore(node.path("keywordMatch").asInt(0));
+            int skills   = clampScore(node.path("skillsMatch").asInt(0));
+            int exp      = clampScore(node.path("experienceRelevance").asInt(0));
+            int edu      = clampScore(node.path("educationMatch").asInt(0));
+            int struct   = clampScore(node.path("structureReadability").asInt(0));
+            int align    = clampScore(node.path("jobAlignment").asInt(0));
+
+            int score = clampScore((int) Math.round(
+                      keyword * 0.30
+                    + skills  * 0.25
+                    + exp     * 0.15
+                    + edu     * 0.10
+                    + struct  * 0.10
+                    + align   * 0.10
+            ));
+
+            node.put("score", score);
+            node.put("grade", gradeFor(score));
+
+            ObjectNode factors = node.putObject("factorScores");
+            factors.put("keywordMatch", keyword);
+            factors.put("skillsMatch", skills);
+            factors.put("experienceRelevance", exp);
+            factors.put("educationMatch", edu);
+            factors.put("structureReadability", struct);
+            factors.put("jobAlignment", align);
+        }
+
+        return analysis;
+    }
+
+    // ATS-01: clamp a factor/final score into the valid 0-100 range.
+    private static int clampScore(int v) {
+        return Math.max(0, Math.min(100, v));
+    }
+
+    // ATS-01: letter grade derived from the final calculated score.
+    private static String gradeFor(int score) {
+        if (score >= 90) return "A";
+        if (score >= 80) return "B";
+        if (score >= 70) return "C";
+        if (score >= 60) return "D";
+        return "F";
     }
 
     public JsonNode generateCoverLetter(User user, AiRequest request) {
@@ -615,18 +664,39 @@ public class AiService {
     }
 
     private String buildAtsScorePrompt(AiRequest r) {
-        return "Analyze this resume content for ATS (applicant tracking system) compatibility " +
-                "and, if a job description is given, job match. Provide a score from 0-100.\n\n" +
-                "Target role: " + orEmpty(r.getTargetRole()) + "\n" +
-                "Job description: " + orEmpty(r.getJobDescription()) + "\n\n" +
-                "Summary: " + orEmpty(r.getSummary()) + "\n" +
-                "Skills: " + joinOrNone(r.getSkills()) + "\n" +
-                "Experience bullets: " + joinOrNone(r.getExperienceBullets()) + "\n" +
-                "Achievements: " + joinOrNone(r.getAchievements()) + "\n\n" +
-                "Respond with ONLY valid JSON matching exactly this schema, no other text:\n" +
-                "{\"score\": 0, \"grade\": \"A|B|C|D|F\", " +
-                "\"matchedKeywords\": [\"keyword\"], \"missingKeywords\": [\"keyword\"], " +
-                "\"topFixes\": [\"specific actionable fix\"], \"summary\": \"1-2 sentence overview\"}";
+        // ATS-01: uses the full resume content + full job description + target
+        // job title. The AI returns ONLY the six factor scores (0-100) plus
+        // keyword/strength/improvement data. It must NOT decide a final score —
+        // the backend computes the weighted final score from the six factors.
+        return "You are an expert ATS (Applicant Tracking System) resume analyst. " +
+                "Evaluate how well the candidate's resume matches the target job. " +
+                "Score the match against SIX defined factors, each from 0 to 100. " +
+                "Do NOT produce a final overall score — the system calculates the " +
+                "weighted final score from your six factor scores.\n\n" +
+                "=== Target job title ===\n" + orEmpty(r.getTargetRole()) + "\n\n" +
+                "=== Full resume content ===\n" + orEmpty(r.getResumeText()) + "\n\n" +
+                "=== Full job description ===\n" + orEmpty(r.getJobDescription()) + "\n\n" +
+                "=== The six factors (score each 0-100; the weight shown is how the final score weights them) ===\n" +
+                "1. keywordMatch (30%): overlap of important, distinctive keywords between resume and job description.\n" +
+                "2. skillsMatch (25%): how many of the job description's required technical skills appear in the resume.\n" +
+                "3. experienceRelevance (15%): how relevant the candidate's experience and role history are to the job.\n" +
+                "4. educationMatch (10%): whether the resume's education satisfies the job's qualification requirements.\n" +
+                "5. structureReadability (10%): resume structure, clarity, and ATS-friendliness (clear headings, bullets, no tables/images).\n" +
+                "6. jobAlignment (10%): overall alignment of the resume as a whole to the job description.\n\n" +
+                "=== Also provide ===\n" +
+                "- matchingKeywords: string array of keywords/skills present in BOTH the resume and the job description.\n" +
+                "- missingKeywords: string array of important keywords/skills from the job description that are ABSENT from the resume.\n" +
+                "- strengths: string array of the strongest areas of the resume given the job description.\n" +
+                "- improvements: string array of practical, truthful suggestions (sharpen the summary, add relevant project details, strengthen experience bullets, use section-relevant keywords, improve structure).\n\n" +
+                "=== Rules ===\n" +
+                "- Base every factor score strictly on evidence actually present in the resume. Do not inflate scores.\n" +
+                "- Never invent facts about the candidate and never recommend fabricating information.\n" +
+                "- For missingKeywords that are skills the candidate has not demonstrated, add a note in improvements " +
+                "that the candidate should only add them if they genuinely possess them.\n\n" +
+                "=== Output format ===\n" +
+                "Respond with ONLY valid JSON matching exactly this schema, no other text, no Markdown, no code fences:\n" +
+                "{\"keywordMatch\":80,\"skillsMatch\":90,\"experienceRelevance\":70,\"educationMatch\":100,\"structureReadability\":85,\"jobAlignment\":75," +
+                "\"matchingKeywords\":[\"Java\"],\"missingKeywords\":[\"Spring Boot\"],\"strengths\":[\"Strong alignment with Java\"],\"improvements\":[\"Sharpen the summary for this role\"]}";
     }
 
     private String buildCoverLetterPrompt(AiRequest r) {
