@@ -528,13 +528,13 @@ public class AiService {
             "explain which project/experience supports it. Do not treat every technology " +
             "mentioned in a project as expert-level knowledge; only claim it is demonstrated " +
             "if the provided information reasonably supports it.\n" +
-            "3. jobRelevantSkillsNotDemonstrated — skills that appear relevant to the target " +
+            "3. jobRelevantSkills — skills that appear relevant to the target " +
             "job description/role but for which there is insufficient evidence that the user " +
             "currently possesses them. Reason: mention that it appears in the job " +
             "description but is not demonstrated.\n" +
-            "4. recommendedResumeSkills — a flat list containing ONLY the skills the user's " +
-            "information supports (existing + demonstrated). NEVER include job-relevant-but-" +
-            "not-demonstrated skills here.\n\n" +
+            "4. recommendedSkills — a flat list of skill names containing ONLY the skills the " +
+            "user's information supports (existing + demonstrated). NEVER include " +
+            "job-relevant-but-not-demonstrated skills here.\n\n" +
             "=== Relevance rules ===\n" +
             "- Prioritize: direct match with existing skills, then skills demonstrated through " +
             "projects/experience, then frequently required skills in the job description, then " +
@@ -547,22 +547,23 @@ public class AiService {
             "=== CRITICAL — No-Hallucination Rules (do not violate) ===\n" +
             "- NEVER invent skills.\n" +
             "- NEVER assume the user knows a technology.\n" +
-            "- Do NOT add job-description skills to recommendedResumeSkills automatically.\n" +
+            "- Do NOT add job-description skills to recommendedSkills automatically.\n" +
             "- Do NOT treat every technology mentioned in a project as expert-level knowledge.\n" +
             "- Do NOT recommend false certifications or fake experience.\n" +
             "- Example: user lists \"Java, SQL, HTML, CSS\"; job description lists \"Java, " +
             "Spring Boot, Docker, AWS, Kubernetes\". existingSkills contains Java, SQL, HTML, " +
-            "CSS. jobRelevantSkillsNotDemonstrated contains Spring Boot, Docker, AWS, " +
-            "Kubernetes. recommendedResumeSkills must NOT include Spring Boot, Docker, AWS, " +
+            "CSS. jobRelevantSkills contains Spring Boot, Docker, AWS, " +
+            "Kubernetes. recommendedSkills must NOT include Spring Boot, Docker, AWS, " +
             "Kubernetes.\n\n" +
             "=== Output format ===\n" +
             "Respond with ONLY valid JSON matching exactly this schema, no other text (no " +
             "Markdown, no code fences, no surrounding prose):\n" +
-            "{\"existingSkills\":[{\"name\":\"Java\",\"reason\":\"Explicitly listed by the user\"}], " +
-            "\"demonstratedSkills\":[{\"name\":\"REST API integration\",\"reason\":\"Demonstrated through the provided project experience\"}], " +
-            "\"jobRelevantSkillsNotDemonstrated\":[{\"name\":\"Docker\",\"reason\":\"Mentioned in the job description but not demonstrated in the provided information\"}], " +
-            "\"recommendedResumeSkills\":[\"Java\",\"SQL\"]}\n" +
-            "recommendedResumeSkills must contain ONLY existing + demonstrated skill names.";
+            "{\"existingSkills\":[\"Java\",\"SQL\"], " +
+            "\"demonstratedSkills\":[\"REST API\"], " +
+            "\"jobRelevantSkills\":[\"Spring Boot\",\"Docker\"], " +
+            "\"recommendedSkills\":[\"Java\",\"SQL\",\"REST API\"]}\n" +
+            "Those four top-level keys are required; output only valid JSON. " +
+            "recommendedSkills must contain ONLY existing + demonstrated skill names.";
     }
 
     private String buildTailorPrompt(AiRequest r) {
