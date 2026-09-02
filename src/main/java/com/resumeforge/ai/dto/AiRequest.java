@@ -53,4 +53,11 @@ public class AiRequest {
     private String outcome;          // "Result / Outcome" — optional
     private String metrics;          // "Metrics" — optional, never fabricated
     private Integer numBullets;      // Number of bullets to generate (1–5)
+
+    // SKILLS-02: dedicated fields for the improved Suggest Skills feature.
+    // These are additive — the existing skills endpoint is reused and the
+    // existing currentSkills / targetRole / jobDescription fields are kept.
+    private String resumeInformation; // Resume content / sections the user pastes
+    private String skillCategory;     // Technical Skills / Programming Languages /
+                                      // Frameworks / Databases / Tools / Cloud / Soft / All
 }

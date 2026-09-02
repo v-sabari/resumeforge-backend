@@ -498,14 +498,71 @@ public class AiService {
                 "{\"text\": \"the generated summary\"}";
     }
 
+    // SKILLS-02: reworked prompt for the improved Suggest Skills feature.
+    // It analyzes the user's existing skills + resume information + optional
+    // target job description/role, classifies every suggested skill, and
+    // strictly separates skills the user actually has from ones that are only
+    // mentioned in the job description (which must NOT be auto-added to the
+    // resume). The old prompt returned a flat keyword list that did not
+    // distinguish demonstrated skills from job-only skills.
     private String buildSkillsPrompt(AiRequest r) {
-        return "Suggest a list of 10-15 relevant technical and soft skills (keywords) for a \"" +
-                orEmpty(r.getTargetRole()) + "\" role, suitable for a resume and ATS matching.\n\n" +
-                "Skills already listed (avoid pure duplicates): " + joinOrNone(r.getCurrentSkills()) + "\n" +
-                "Keywords from experience: " + joinOrNone(r.getExperienceKeywords()) + "\n" +
-                "Keywords from projects: " + joinOrNone(r.getProjectKeywords()) + "\n\n" +
-                "Respond with ONLY valid JSON matching exactly this schema, no other text:\n" +
-                "{\"items\": [\"Skill 1\", \"Skill 2\", \"...\"]}";
+        return "You are assisting with resume skill analysis. Analyze only the information " +
+            "provided by the user. Never claim that the user possesses a skill unless the " +
+            "provided information supports it. Separate existing/demonstrated skills from " +
+            "job-relevant skills that are not demonstrated. Do not fabricate skills, " +
+            "experience, certifications, proficiency levels, or achievements.\n\n" +
+            "=== User-provided information ===\n" +
+            "Target job role (optional): " + orEmpty(r.getTargetRole()) + "\n" +
+            "Skill category filter: " + orEmpty(r.getSkillCategory()) + "\n" +
+            "Current skills the user stated they know: " + joinOrNone(r.getCurrentSkills()) + "\n" +
+            "Resume information / content provided by the user:\n" + orEmpty(r.getResumeInformation()) + "\n" +
+            "Target job description (optional):\n" + orEmpty(r.getJobDescription()) + "\n\n" +
+            "=== Task ===\n" +
+            "Identify and classify the relevant skills into the four groups below. Analyze " +
+            "the user's existing skills, resume content, projects, experience, and education " +
+            "along with the target job description and role.\n\n" +
+            "1. existingSkills — skills the user explicitly stated they know/use. " +
+            "Reason: \"Explicitly listed by the user\" (or similar).\n" +
+            "2. demonstratedSkills — skills not explicitly listed but reasonably demonstrated " +
+            "through the user's projects, experience, or other resume information. Reason: " +
+            "explain which project/experience supports it. Do not treat every technology " +
+            "mentioned in a project as expert-level knowledge; only claim it is demonstrated " +
+            "if the provided information reasonably supports it.\n" +
+            "3. jobRelevantSkillsNotDemonstrated — skills that appear relevant to the target " +
+            "job description/role but for which there is insufficient evidence that the user " +
+            "currently possesses them. Reason: mention that it appears in the job " +
+            "description but is not demonstrated.\n" +
+            "4. recommendedResumeSkills — a flat list containing ONLY the skills the user's " +
+            "information supports (existing + demonstrated). NEVER include job-relevant-but-" +
+            "not-demonstrated skills here.\n\n" +
+            "=== Relevance rules ===\n" +
+            "- Prioritize: direct match with existing skills, then skills demonstrated through " +
+            "projects/experience, then frequently required skills in the job description, then " +
+            "closely related skills the user's experience supports.\n" +
+            "- When a skill category is provided (e.g. \"Programming Languages\"), focus the " +
+            "suggestions on that category (\"All Relevant Skills\" means no restriction).\n" +
+            "- Do not suggest unrelated technologies simply because they are popular.\n" +
+            "- Never infer advanced skills from basic knowledge. Never claim proficiency that " +
+            "was not demonstrated.\n\n" +
+            "=== CRITICAL — No-Hallucination Rules (do not violate) ===\n" +
+            "- NEVER invent skills.\n" +
+            "- NEVER assume the user knows a technology.\n" +
+            "- Do NOT add job-description skills to recommendedResumeSkills automatically.\n" +
+            "- Do NOT treat every technology mentioned in a project as expert-level knowledge.\n" +
+            "- Do NOT recommend false certifications or fake experience.\n" +
+            "- Example: user lists \"Java, SQL, HTML, CSS\"; job description lists \"Java, " +
+            "Spring Boot, Docker, AWS, Kubernetes\". existingSkills contains Java, SQL, HTML, " +
+            "CSS. jobRelevantSkillsNotDemonstrated contains Spring Boot, Docker, AWS, " +
+            "Kubernetes. recommendedResumeSkills must NOT include Spring Boot, Docker, AWS, " +
+            "Kubernetes.\n\n" +
+            "=== Output format ===\n" +
+            "Respond with ONLY valid JSON matching exactly this schema, no other text (no " +
+            "Markdown, no code fences, no surrounding prose):\n" +
+            "{\"existingSkills\":[{\"name\":\"Java\",\"reason\":\"Explicitly listed by the user\"}], " +
+            "\"demonstratedSkills\":[{\"name\":\"REST API integration\",\"reason\":\"Demonstrated through the provided project experience\"}], " +
+            "\"jobRelevantSkillsNotDemonstrated\":[{\"name\":\"Docker\",\"reason\":\"Mentioned in the job description but not demonstrated in the provided information\"}], " +
+            "\"recommendedResumeSkills\":[\"Java\",\"SQL\"]}\n" +
+            "recommendedResumeSkills must contain ONLY existing + demonstrated skill names.";
     }
 
     private String buildTailorPrompt(AiRequest r) {
