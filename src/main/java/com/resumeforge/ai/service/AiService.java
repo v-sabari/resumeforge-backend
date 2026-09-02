@@ -395,6 +395,10 @@ public class AiService {
         return (s == null || s.isBlank()) ? "(not provided)" : s;
     }
 
+    private static boolean hasText(String s) {
+        return s != null && !s.isBlank();
+    }
+
     private static String joinOrNone(List<String> items) {
         if (items == null || items.isEmpty()) return "(none provided)";
         return String.join(", ", items);
@@ -426,15 +430,62 @@ public class AiService {
                 "{\"text\": \"the rewritten text\"}";
     }
 
+    // BULLETS-01: reworked prompt for the improved Bullet Points feature.
+    // Uses the structured fields the new frontend form sends and enforces
+    // strict no-hallucination rules. The old generic "quantify results
+    // where possible" instruction implicitly encouraged the model to
+    // invent metrics; the new prompt only allows user-provided outcomes.
     private String buildBulletPrompt(AiRequest r) {
-        return "Write 5 strong, ATS-friendly resume bullet points for the role \"" +
-                orEmpty(r.getRole()) + "\" at \"" + orEmpty(r.getCompany()) + "\". " +
-                "Start each with a strong action verb and quantify results where possible.\n\n" +
-                "Responsibilities to draw on: " + joinOrNone(r.getResponsibilities()) + "\n" +
-                "Relevant technologies: " + joinOrNone(r.getTechnologies()) + "\n" +
-                "Existing bullet text (may be empty): " + orEmpty(r.getCurrentText()) + "\n\n" +
-                "Respond with ONLY valid JSON matching exactly this schema, no other text:\n" +
-                "{\"items\": [\"bullet 1\", \"bullet 2\", \"bullet 3\", \"bullet 4\", \"bullet 5\"]}";
+        int numBullets = (r.getNumBullets() != null
+                && r.getNumBullets() >= 1 && r.getNumBullets() <= 5)
+            ? r.getNumBullets() : 5;
+
+        String sectionType = orEmpty(r.getSectionType());
+        String role        = orEmpty(r.getRole());
+        String company     = orEmpty(r.getCompany());
+
+        String description = !hasText(r.getDescription())
+            ? joinOrNone(r.getResponsibilities())
+            : r.getDescription().trim();
+
+        return "You are an expert professional resume writer. Write strong, concise, " +
+            "ATS-friendly resume bullet points for a resume " +
+            "section of type \"" + sectionType + "\".\n\n" +
+            "=== Context (all user-provided) ===\n" +
+            "Section type: " + sectionType + "\n" +
+            "Role / position: " + role + "\n" +
+            "Organization / company (optional): " + company + "\n" +
+            "What the user did (in their own words): " + orEmpty(description) + "\n" +
+            "Technologies / tools the user actually used: " + joinOrNone(r.getTechnologies()) + "\n" +
+            "Result / outcome (optional): " + orEmpty(r.getOutcome()) + "\n" +
+            "Metrics (optional, only what the user reported): " + orEmpty(r.getMetrics()) + "\n\n" +
+            "=== Task ===\n" +
+            "Write exactly " + numBullets + " professional resume bullet point(s) that " +
+            "improve and polish the user's information while preserving its factual meaning.\n\n" +
+            "Each bullet should follow, when the information permits:\n" +
+            "  Action verb + what was done + technology/method + result/impact.\n" +
+            "Use strong action verbs. Make each bullet concise, professional, and " +
+            "ATS-friendly. Highlight relevant technical skills naturally. Use different " +
+            "action verbs across bullets; avoid repeating the same verb. " +
+            "Do not use first-person pronouns such as \"I\", \"me\", or \"my\". " +
+            "Avoid unnecessary buzzwords.\n\n" +
+            "=== CRITICAL — No-Hallucination Rules (do not violate) ===\n" +
+            "- Use ONLY the information explicitly provided above.\n" +
+            "- NEVER invent achievements, numbers, percentages, features, responsibilities, " +
+            "projects, company information, users/customers, or performance improvements.\n" +
+            "- NEVER assume a technology was used merely because it is common for the role — " +
+            "mention technologies only if the user listed them.\n" +
+            "- If \"Metrics\" and/or \"Result / outcome\" are \"(not provided)\", do not add " +
+            "any numbers or results — simply omit the result/impact part of the bullet.\n" +
+            "- Do not exaggerate or embellish beyond what was stated.\n" +
+            "- If \"organization / company\" is \"(not provided)\", do not name or imply an employer.\n\n" +
+            "=== Output format ===\n" +
+            "Respond with ONLY valid JSON matching exactly this schema, no other text (no " +
+            "Markdown, no code fences, no surrounding prose):\n" +
+            "{\"bullets\": [{\"text\": \"generated resume bullet point\", \"keywords\": [\"keyword1\", \"keyword2\"]}]}\n" +
+            "(\"bullets\" must contain exactly " + numBullets + " item(s). \"keywords\" should " +
+            "list the relevant technologies/skills that actually appear in each bullet — only " +
+            "technologies the user provided.)";
     }
 
     private String buildSummaryPrompt(AiRequest r) {

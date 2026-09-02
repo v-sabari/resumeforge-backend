@@ -42,4 +42,15 @@ public class AiRequest {
     // `currentText` — used to give the model the existing bullet text (if any)
     // as context for the rewrite.
     private String currentText;
+
+    // BULLETS-01: dedicated fields for the improved Bullet Points feature.
+    // The structured form collects the section type, what the user actually
+    // did, and (optional) outcome + metrics. The AI is strictly forbidden from
+    // inventing facts — it may only restate/improve what the user provided.
+    private String sectionType;      // Work Experience / Internship / Project /
+                                     // Achievement / Leadership / Other
+    private String description;      // "What did you do?" — the user's own words
+    private String outcome;          // "Result / Outcome" — optional
+    private String metrics;          // "Metrics" — optional, never fabricated
+    private Integer numBullets;      // Number of bullets to generate (1–5)
 }
