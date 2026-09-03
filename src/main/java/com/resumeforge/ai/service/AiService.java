@@ -716,17 +716,36 @@ public class AiService {
     }
 
     private String buildLinkedInPrompt(AiRequest r) {
-        return "Optimize this candidate's LinkedIn presence. Create a compelling headline " +
-                "and About section.\n\n" +
-                "Current role: " + orEmpty(r.getCurrentRole()) + "\n" +
-                "Target role: " + orEmpty(r.getTargetRole()) + "\n" +
-                "Current headline: " + orEmpty(r.getCurrentHeadline()) + "\n" +
-                "Current About section: " + orEmpty(r.getCurrentAbout()) + "\n" +
-                "Top skills: " + joinOrNone(r.getTopSkills()) + "\n" +
-                "Achievements: " + joinOrNone(r.getAchievements()) + "\n\n" +
-                "Respond with ONLY valid JSON matching exactly this schema, no other text:\n" +
-                "{\"optimizedHeadline\": \"...\", \"optimizedAbout\": \"...\", " +
-                "\"headlineTips\": \"short tip on why this headline works\"}";
+        // LINKEDIN-01: generate recruiter-friendly LinkedIn content from the
+        // user's actual resume/profile information. The AI must NEVER invent
+        // skills, experience, achievements, certifications, or metrics — it may
+        // only use what the user provided. Returns headline, about, skills
+        // (relevant to the target role), and profile improvement suggestions.
+        return "You are an expert LinkedIn profile optimizer for job seekers. " +
+                "Generate professional, recruiter-friendly LinkedIn content based SOLELY " +
+                "on the resume and profile information the user provides. " +
+                "Never invent or add any information the user has not provided.\n\n" +
+                "IMPORTANT RULE: Do NOT add skills the user does not have. " +
+                "Do NOT fabricate experience, achievements, job titles, certifications, " +
+                "or metrics. Use ONLY the user's provided information.\n\n" +
+                "=== Target job role ===\n" + orEmpty(r.getTargetRole()) + "\n\n" +
+                "=== Resume / profile information ===\n" + orEmpty(r.getLinkedinResumeInfo()) + "\n\n" +
+                "=== Existing LinkedIn content (optional — improve if provided) ===\n" +
+                orEmpty(r.getLinkedinExistingContent()) + "\n\n" +
+                "=== Generate the following ===\n" +
+                "1. Headline: A concise professional headline containing relevant skills and the target role. " +
+                "Keep it under 220 characters. Use natural keywords recruiters search for.\n" +
+                "2. About: A professional About section (3-5 short paragraphs) that clearly describes " +
+                "the candidate, highlights relevant skills, mentions projects/experience when provided, " +
+                "shows career interests, uses natural keywords, and is suitable for LinkedIn. " +
+                "Do not exaggerate experience.\n" +
+                "3. Skills: A list of the most relevant skills from the user's profile for the target role. " +
+                "Use only skills the user actually has.\n" +
+                "4. Suggestions: 3-5 practical profile improvement suggestions based on the provided information.\n\n" +
+                "=== Output format ===\n" +
+                "Respond with ONLY valid JSON matching exactly this schema, no other text, no Markdown, no code fences:\n" +
+                "{\"headline\": \"...\", \"about\": \"...\", \"skills\": [\"Java\", \"SQL\"], " +
+                "\"suggestions\": [\"Add your strongest project to the Featured section\"]}";
     }
 
     private String buildGrammarCheckPrompt(AiRequest r) {

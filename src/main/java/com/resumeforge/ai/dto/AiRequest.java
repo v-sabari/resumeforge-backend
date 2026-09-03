@@ -80,4 +80,11 @@ public class AiRequest {
     // the AI can apply section-appropriate professional styling while only
     // correcting, never inventing, content.
     private String grammarSection;    // Summary / Experience / Project / Education / Skills / Other
+
+    // LINKEDIN-01: dedicated fields for the improved LinkedIn Optimization feature.
+    // The form collects full resume/profile information, the target job role,
+    // and (optional) existing LinkedIn content so the AI can generate recruiter-
+    // friendly LinkedIn content based only on what the user actually has.
+    private String linkedinResumeInfo;    // Full resume/profile details (education, skills, experience, projects, achievements)
+    private String linkedinExistingContent; // Optional: existing LinkedIn headline/about content
 }
