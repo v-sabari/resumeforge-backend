@@ -87,4 +87,11 @@ public class AiRequest {
     // friendly LinkedIn content based only on what the user actually has.
     private String linkedinResumeInfo;    // Full resume/profile details (education, skills, experience, projects, achievements)
     private String linkedinExistingContent; // Optional: existing LinkedIn headline/about content
+
+    // COVER-01: dedicated field for the improved Cover Letter feature. The form
+    // collects full resume/profile information so the AI can generate a cover
+    // letter based only on what the user actually has — never inventing
+    // experience, achievements, skills, or metrics.
+    private String coverResumeInfo; // Full resume details (education, skills, experience, projects)
+    private String additionalInfo;  // Optional: anything else the user wants mentioned
 }

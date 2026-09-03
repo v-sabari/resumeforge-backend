@@ -700,19 +700,35 @@ public class AiService {
     }
 
     private String buildCoverLetterPrompt(AiRequest r) {
-        return "Write a professional cover letter based on this candidate's resume details " +
-                "and the job description. Make it personalized, enthusiastic, and highlight " +
-                "relevant qualifications. 3-4 short paragraphs.\n\n" +
-                "Candidate name: " + orEmpty(r.getCandidateName()) + "\n" +
-                "Target role: " + orEmpty(r.getTargetRole()) + "\n" +
-                "Company: " + orEmpty(r.getCompanyName()) + "\n" +
-                "Tone: " + orEmpty(r.getTone()) + "\n" +
-                "Job description: " + orEmpty(r.getJobDescription()) + "\n\n" +
-                "Summary: " + orEmpty(r.getSummary()) + "\n" +
-                "Top achievements: " + joinOrNone(r.getTopAchievements()) + "\n" +
-                "Key skills: " + joinOrNone(r.getSkills()) + "\n\n" +
-                "Respond with ONLY valid JSON matching exactly this schema, no other text:\n" +
-                "{\"text\": \"the full cover letter\"}";
+        // COVER-01: generate a professional, personalized cover letter from the
+        // user's actual resume information and job description. The AI must NEVER
+        // invent experience, achievements, metrics, skills, certifications, or
+        // company information — it may only use what the user provided.
+        return "You are an expert cover letter writer. Write a professional, " +
+                "personalized cover letter based SOLELY on the candidate's resume " +
+                "information and the job description provided. " +
+                "Never invent or add any information the user has not provided.\n\n" +
+                "IMPORTANT RULE: Do NOT add fake experience, achievements, metrics, " +
+                "skills, certifications, or company information. Use ONLY the user's " +
+                "provided information. If something is not provided, do not make it up.\n\n" +
+                "=== Candidate name ===\n" + orEmpty(r.getCandidateName()) + "\n\n" +
+                "=== Job title ===\n" + orEmpty(r.getTargetRole()) + "\n\n" +
+                "=== Company name (optional) ===\n" + orEmpty(r.getCompanyName()) + "\n\n" +
+                "=== Job description ===\n" + orEmpty(r.getJobDescription()) + "\n\n" +
+                "=== Resume / profile information ===\n" + orEmpty(r.getCoverResumeInfo()) + "\n\n" +
+                "=== Additional information (optional) ===\n" + orEmpty(r.getAdditionalInfo()) + "\n\n" +
+                "=== Cover letter requirements ===\n" +
+                "- Be customized to the job description.\n" +
+                "- Highlight relevant skills from the resume.\n" +
+                "- Mention relevant projects or experience when provided.\n" +
+                "- Explain why the candidate is a good fit for the role.\n" +
+                "- Use professional, natural language.\n" +
+                "- Avoid unnecessary repetition.\n" +
+                "- Be concise (3-4 short paragraphs plus greeting and sign-off).\n" +
+                "- Be directly usable by the user.\n\n" +
+                "=== Output format ===\n" +
+                "Respond with ONLY valid JSON matching exactly this schema, no other text, no Markdown, no code fences:\n" +
+                "{\"coverLetter\": \"the complete cover letter text\"}";
     }
 
     private String buildLinkedInPrompt(AiRequest r) {
