@@ -730,15 +730,32 @@ public class AiService {
     }
 
     private String buildGrammarCheckPrompt(AiRequest r) {
-        return "Check this text for grammar, spelling, and clarity issues. " +
-                "Context: " + orEmpty(r.getContext()) + "\n\n" +
-                "Text:\n" + orEmpty(r.getText()) + "\n\n" +
-                "Respond with ONLY valid JSON matching exactly this schema, no other text:\n" +
-                "{\"correctedText\": \"the corrected text (same as input if already clean)\", " +
-                "\"issuesFound\": [\"description of issue 1\", \"description of issue 2\"], " +
-                "\"issueCount\": 0, \"clean\": true}\n" +
-                "(\"clean\" must be true and \"issuesFound\" an empty array if there are no issues; " +
-                "\"issueCount\" must equal issuesFound.length.)";
+        // GRAMMAR-01: check grammar, spelling, punctuation, and sentence structure
+        // while preserving the original meaning and staying appropriate for a
+        // resume. The AI must NEVER invent or add information (no new skills,
+        // technologies, achievements, metrics, experience, responsibilities, or
+        // certifications) — it only corrects/improves the provided text. Returns a
+        // structured list of issues (original/correction/reason).
+        return "You are an expert resume editor. Check the provided text for grammar, " +
+                "spelling, punctuation, and sentence-structure problems. Improve clarity " +
+                "where necessary while PRESERVING the original meaning. Keep the writing " +
+                "professional and suitable for a resume. Avoid unnecessary rewriting.\n\n" +
+                "IMPORTANT RULE: Do NOT invent or add any information. Do NOT add new skills, " +
+                "technologies, achievements, metrics, experience, responsibilities, or " +
+                "certifications. Only correct or improve the information the user provided.\n\n" +
+                "=== Resume section this text belongs to ===\n" + orEmpty(r.getGrammarSection()) + "\n\n" +
+                "=== Text to check ===\n" + orEmpty(r.getText()) + "\n\n" +
+                "=== Output format ===\n" +
+                "Respond with ONLY valid JSON matching exactly this schema, no other text, no Markdown, no code fences:\n" +
+                "{\n" +
+                "  \"originalText\": \"the original user text, unchanged\",\n" +
+                "  \"correctedText\": \"the full corrected text (identical to originalText if there are no issues)\",\n" +
+                "  \"issues\": [\n" +
+                "    { \"original\": \"the incorrect snippet\", \"correction\": \"the corrected snippet\", \"reason\": \"Grammar correction\" }\n" +
+                "  ]\n" +
+                "}\n" +
+                "If there are NO issues, return an empty \"issues\" array and keep \"correctedText\" " +
+                "identical to \"originalText\".";
     }
 
     private String buildInterviewPrepPrompt(AiRequest r) {

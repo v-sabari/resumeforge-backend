@@ -74,4 +74,10 @@ public class AiRequest {
     // description. The AI returns individual factor scores (0-100); the
     // backend computes the weighted final score.
     private String resumeText;
+
+    // GRAMMAR-01: dedicated field for the improved Grammar Check feature. The
+    // form collects the text to check and the resume section it belongs to so
+    // the AI can apply section-appropriate professional styling while only
+    // correcting, never inventing, content.
+    private String grammarSection;    // Summary / Experience / Project / Education / Skills / Other
 }
