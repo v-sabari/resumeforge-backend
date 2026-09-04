@@ -128,19 +128,27 @@ public class AdminService {
     }
 
     @Transactional
-    public ApiResponse togglePremium(Long userId, TogglePremiumRequest request) {
+    public AdminUserResponse togglePremium(Long userId, TogglePremiumRequest request) {
         User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        // Since the user's premium status is changing, re-fetch the managed
+        // entity so the returned AdminUserResponse reflects the persisted state.
+        User managed = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         // SEC/BUS FIX: an admin grant is permanent — clear any time-limited
         // referral expiry so isPremium() (which honors premiumExpiresAt) does not
         // deactivate the admin grant later. Without this, granting premium to a
         // user with an expired referral expiry would have no lasting effect.
-        user.setPremium(request.getPremium());
-        user.setPremiumExpiresAt(null);
-        userRepository.save(user);
+        managed.setPremium(request.getPremium());
+        managed.setPremiumExpiresAt(null);
+        managed = userRepository.save(managed);
 
-        return ApiResponse.success("Premium status updated");
+        // Return the updated user (AdminUserResponse) so the admin UI has a
+        // single authoritative source to reflect the new premium status, instead
+        // of a bare success envelope that carries no user data.
+        return toAdminUserResponse(managed);
     }
 
     public Page<PaymentResponse> getPayments(int page, int size) {

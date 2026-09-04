@@ -45,7 +45,7 @@ public class AdminController {
     }
 
     @PostMapping("/users/{id}/toggle-premium")
-    public ResponseEntity<ApiResponse> togglePremium(
+    public ResponseEntity<AdminUserResponse> togglePremium(
             @PathVariable Long id,
             @Valid @RequestBody TogglePremiumRequest request) {
         return ResponseEntity.ok(adminService.togglePremium(id, request));
