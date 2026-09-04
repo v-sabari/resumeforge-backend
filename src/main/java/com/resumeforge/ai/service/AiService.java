@@ -813,18 +813,47 @@ public class AiService {
     }
 
     private String buildInterviewPrepPrompt(AiRequest r) {
-        return "Based on this candidate's background and job description, generate 5 likely " +
-                "interview questions with strong model answers.\n\n" +
-                "Target role: " + orEmpty(r.getTargetRole()) + "\n" +
-                "Company: " + orEmpty(r.getCompanyName()) + "\n" +
-                "Job description: " + orEmpty(r.getJobDescription()) + "\n\n" +
-                "Summary: " + orEmpty(r.getSummary()) + "\n" +
-                "Skills: " + joinOrNone(r.getSkills()) + "\n" +
-                "Top achievements: " + joinOrNone(r.getTopAchievements()) + "\n\n" +
-                "Respond with ONLY valid JSON matching exactly this schema, no other text:\n" +
-                "{\"questions\": [{\"question\": \"...\", \"modelAnswer\": \"...\", " +
-                "\"category\": \"Behavioral|Technical|Situational\"}], " +
+        // INTERVIEW-01: generate personalized interview preparation questions
+        // based on the candidate's actual resume, the target role/job description,
+        // interview type, experience level, and requested number of questions.
+        // NEVER invent background: project questions use only the projects the
+        // user provided, and technical questions must not claim knowledge of
+        // technologies the user did not list. Technologies in the job description
+        // that the user does not have may appear only as clearly-labeled
+        // job-relevant preparation topics.
+        String type = orEmpty(r.getInterviewType());
+        String expLevel = orEmpty(r.getExperienceLevel());
+        Integer count = r.getQuestionCount();
+        int n = (count == null || count < 1) ? 10 : count;
+        if (n > 30) n = 30;
+
+        return "You are an expert interview coach. Based on the candidate's ACTUAL background and " +
+                "the target job, generate " + n + " personalized interview preparation questions with " +
+                "model answers.\n\n" +
+                "IMPORTANT RULE: Never invent information about the user's background. " +
+                "Use only the projects, experience, and skills provided by the user. " +
+                "For technical questions, do not claim the user knows a technology they did not provide. " +
+                "If the job description mentions a technology the user does not have, you may include it " +
+                "as a clearly-labeled 'job-relevant preparation topic', but do not claim the user knows it.\n\n" +
+                "=== Target job role ===\n" + orEmpty(r.getTargetRole()) + "\n\n" +
+                "=== Company ===\n" + orEmpty(r.getCompanyName()) + "\n\n" +
+                "=== Job description ===\n" + orEmpty(r.getJobDescription()) + "\n\n" +
+                "=== Interview type ===\n" + (type.isEmpty() ? "Mixed" : type) + "\n\n" +
+                "=== Experience level ===\n" + (expLevel.isEmpty() ? "Experienced" : expLevel) + "\n\n" +
+                "=== Number of questions ===\n" + n + "\n\n" +
+                "=== Candidate's full resume ===\n" + orEmpty(r.getInterviewResumeInfo()) + "\n\n" +
+                "=== Question categories by interview type ===\n" +
+                "Technical: Programming, OOP, SQL, Frameworks, Projects, Problem solving. " +
+                "Only include technologies supported by the user's information or job description context.\n" +
+                "HR / Behavioral: Introduction, Strengths, Weaknesses, Career goals, Teamwork, Challenges.\n" +
+                "Project questions: Project objective, Technologies used, Your contribution, Challenges, Solutions, Improvements (use only the user's provided projects).\n" +
+                "Mixed: a blend of the above.\n\n" +
+                "For each question provide a question, category, difficulty (Easy/Medium/Hard), a " +
+                "suggested answer based on the user's provided information, and key points to mention.\n\n" +
+                "Respond with ONLY valid JSON matching exactly this schema, no other text, no Markdown, no code fences:\n" +
+                "{\"questions\": [{\"question\": \"...\", \"category\": \"Technical\", " +
+                "\"difficulty\": \"Easy\", \"suggestedAnswer\": \"...\", \"keyPoints\": [\"...\"]}], " +
                 "\"generalTips\": \"1-2 sentences of general interview advice\"}\n" +
-                "(Provide exactly 5 questions.)";
+                "Provide exactly " + n + " questions. All answers must be based on the user's actual resume content.";
     }
 }

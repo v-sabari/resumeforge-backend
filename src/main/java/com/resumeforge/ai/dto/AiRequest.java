@@ -100,4 +100,14 @@ public class AiRequest {
     // the job description and suggest improvements — never inventing skills,
     // experience, achievements, or metrics that are not already present.
     private String tailorResumeInfo; // Complete resume content for tailoring
+
+    // INTERVIEW-01: dedicated fields for the improved Interview Preparation
+    // feature. The form collects the full resume, target role, job description,
+    // interview type, experience level, and desired number of questions so the
+    // AI generates personalized questions based on the user's actual background —
+    // never inventing experience, projects, or skills.
+    private String interviewResumeInfo; // Full resume content
+    private String interviewType;       // Technical / HR / Behavioral / Mixed
+    private String experienceLevel;     // Fresher / Internship / Experienced
+    private Integer questionCount;      // Number of questions (e.g. 10, 20, 30)
 }
