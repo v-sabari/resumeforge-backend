@@ -15,8 +15,8 @@ public class ResumeRequest {
     private String title;
 
     @Pattern(
-            regexp = "^(classic|modern|minimal|professional|executive|fresher|creative)$",
-            message = "Template must be one of: classic, modern, minimal, professional, executive, fresher, creative"
+            regexp = "^(classic|modern|minimal|corporate|traditional|clean|fresher|graduate|tech|engineering|executive|leadership|creative|designer|sleek|contemporary|academic|research|medical|finance)$",
+            message = "Template must be one of: classic, modern, minimal, corporate, traditional, clean, fresher, graduate, tech, engineering, executive, leadership, creative, designer, sleek, contemporary, academic, research, medical, finance"
     )
     private String template;
 

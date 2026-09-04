@@ -29,9 +29,17 @@ public class ResumeService {
     private static final Logger log = LoggerFactory.getLogger(ResumeService.class);
 
     public static final Set<String> ALLOWED_TEMPLATES = Set.of(
-            "modern", "classic", "minimal", "professional",
-            "executive", "fresher", "creative"
+            "modern", "corporate", "classic", "traditional", "minimal", "clean",
+            "fresher", "graduate", "tech", "engineering",
+            "executive", "leadership", "creative", "designer",
+            "sleek", "contemporary", "academic", "research", "medical", "finance"
     );
+
+    public static final Set<String> PREMIUM_TEMPLATES = Set.of(
+            "executive", "leadership", "creative", "designer",
+            "sleek", "contemporary", "academic", "research", "medical", "finance"
+    );
+
     public static final String DEFAULT_TEMPLATE = "modern";
 
     private static final int TITLE_MAX_LENGTH   = 500;
@@ -49,7 +57,7 @@ public class ResumeService {
 
     @Transactional
     public ResumeResponse createResume(User user, ResumeRequest request) {
-        String safeTemplate = resolveTemplate(request.getTemplate(), null);
+        String safeTemplate = resolveTemplate(request.getTemplate(), null, user);
         log.info("createResume userId={} title='{}' template='{}'",
                 user.getId(), request.getTitle(), safeTemplate);
 
@@ -101,7 +109,7 @@ public class ResumeService {
                         ? request.getTitle().substring(0, Math.min(50, request.getTitle().length()))
                         : "null");
 
-        String safeTemplate = resolveTemplate(request.getTemplate(), resume.getTemplate());
+        String safeTemplate = resolveTemplate(request.getTemplate(), resume.getTemplate(), user);
         String safeTitle    = sanitizeTitle(request.getTitle());
 
         resume.setTitle(safeTitle);
@@ -170,7 +178,7 @@ public class ResumeService {
         try {
             ResumeRequest sd = objectMapper.readValue(snapshot.getSnapshotData(), ResumeRequest.class);
             resume.setTitle(sanitizeTitle(sd.getTitle()));
-            resume.setTemplate(resolveTemplate(sd.getTemplate(), resume.getTemplate()));
+            resume.setTemplate(resolveTemplate(sd.getTemplate(), resume.getTemplate(), user));
             resume.setPersonalInfo(sanitizeJsonb(sd.getPersonalInfo()));
             resume.setSummary(sanitizeSummary(sd.getSummary()));
             resume.setExperience(sanitizeJsonb(sd.getExperience()));
@@ -196,10 +204,21 @@ public class ResumeService {
     // PRIVATE HELPERS
     // =========================================================================
 
-    private String resolveTemplate(String incoming, String existing) {
+    private String resolveTemplate(String incoming, String existing, User user) {
         if (incoming != null && !incoming.isBlank()) {
             String trimmed = incoming.trim().toLowerCase();
-            if (ALLOWED_TEMPLATES.contains(trimmed)) return trimmed;
+            if (ALLOWED_TEMPLATES.contains(trimmed)) {
+                if (PREMIUM_TEMPLATES.contains(trimmed) && !user.isPremium()) {
+                    log.warn("resolveTemplate PREMIUM_BLOCKED incoming='{}' userId={} — falling back",
+                            incoming, user.getId());
+                    // Free user trying a premium template — keep existing or default
+                    if (existing != null && !existing.isBlank() && ALLOWED_TEMPLATES.contains(existing.trim())) {
+                        return existing.trim();
+                    }
+                    return DEFAULT_TEMPLATE;
+                }
+                return trimmed;
+            }
             log.warn("resolveTemplate INVALID incoming='{}' — falling back", incoming);
         }
         if (existing != null && !existing.isBlank() && ALLOWED_TEMPLATES.contains(existing.trim())) {
