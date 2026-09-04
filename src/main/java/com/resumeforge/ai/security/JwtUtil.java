@@ -24,6 +24,13 @@ public class JwtUtil {
     @Value("${app.jwt.expiration-ms}")
     private Long expirationMs;
 
+    // REMEMBER-ME: optional longer lifetime used when a user logs in with the
+    // "Remember me" checkbox ticked. Configured independently of the regular
+    // session lifetime so Remember Me can be a longer, revocable session without
+    // extending every user's default session. Defaults to 14 days.
+    @Value("${app.jwt.remember-me-expiration-ms:1209600000}")
+    private Long rememberMeExpirationMs;
+
     // SEC FIX: fail fast at startup instead of silently signing tokens with an
     // empty or too-short key. Empty default + empty env would otherwise produce
     // an IllegalArgumentException only at runtime on the first request.
@@ -46,17 +53,36 @@ public class JwtUtil {
     }
 
     public String generateToken(String email, Long userId) {
-        Map<String, Object> claims = new HashMap<>();
-        claims.put("userId", userId);
-        return createToken(claims, email);
+        return generateToken(email, userId, false);
     }
 
-    private String createToken(Map<String, Object> claims, String subject) {
+    /**
+     * Issues a JWT whose lifetime matches the requested session flavor:
+     * Remember Me (true) uses the longer remember-me expiry, otherwise the
+     * regular session expiry. The matching cookie max-age is derived through
+     * {@link #sessionExpirationMs(boolean)} so the token and cookie can never
+     * drift apart.
+     */
+    public String generateToken(String email, Long userId, boolean rememberMe) {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("userId", userId);
+        return createToken(claims, email, sessionExpirationMs(rememberMe));
+    }
+
+    /** Single source of truth for the JWT expiration, in milliseconds. */
+    public long sessionExpirationMs(boolean rememberMe) {
+        if (rememberMe && rememberMeExpirationMs != null && rememberMeExpirationMs > 0) {
+            return rememberMeExpirationMs;
+        }
+        return expirationMs;
+    }
+
+    private String createToken(Map<String, Object> claims, String subject, long lifetimeMs) {
         return Jwts.builder()
                 .claims(claims)
                 .subject(subject)
                 .issuedAt(new Date(System.currentTimeMillis()))
-                .expiration(new Date(System.currentTimeMillis() + expirationMs))
+                .expiration(new Date(System.currentTimeMillis() + lifetimeMs))
                 .signWith(getSigningKey())
                 .compact();
     }

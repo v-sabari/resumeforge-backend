@@ -137,7 +137,11 @@ public class AuthService {
             throw new UnauthorizedException("Email not verified. Please check your inbox for the OTP.");
         }
 
-        String token = jwtUtil.generateToken(user.getEmail(), user.getId());
+        // REMEMBER-ME: a ticked checkbox extends the session lifetime (JWT
+        // expiry + matching cookie max-age) without changing password handling.
+        // The flag is only used to select the token lifetime here.
+        boolean rememberMe = Boolean.TRUE.equals(request.getRememberMe());
+        String token = jwtUtil.generateToken(user.getEmail(), user.getId(), rememberMe);
 
         return AuthResponse.builder()
                 .token(token)

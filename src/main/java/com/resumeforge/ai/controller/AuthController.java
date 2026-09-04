@@ -2,16 +2,23 @@ package com.resumeforge.ai.controller;
 
 import com.resumeforge.ai.dto.*;
 import com.resumeforge.ai.entity.User;
+import com.resumeforge.ai.repository.UserRepository;
+import com.resumeforge.ai.security.JwtUtil;
 import com.resumeforge.ai.service.AuthService;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+
+import java.time.Instant;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -20,14 +27,19 @@ public class AuthController {
     @Autowired
     private AuthService authService;
 
+    @Autowired
+    private JwtUtil jwtUtil;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    private static final Logger log = LoggerFactory.getLogger(AuthController.class);
+
     // BUG-004 FIX: cookie name for the httpOnly session token. Kept distinct
     // from the old localStorage key ("resumeforge_token") only in spirit —
     // reusing the same name is fine and keeps things easy to recognise in
     // browser devtools.
     private static final String AUTH_COOKIE_NAME = "resumeforge_token";
-
-    @Value("${app.jwt.expiration-ms}")
-    private long jwtExpirationMs;
 
     /**
      * BUG-004 FIX: The JWT used to be returned in the JSON response body and
@@ -45,14 +57,18 @@ public class AuthController {
      * origin, via the proxy). SameSite=Lax is the more appropriate, more
      * secure setting for a first-party session cookie (adds baseline CSRF
      * protection); "None" is no longer needed.
+     *
+     * REMEMBER-ME: maxAgeSeconds is derived from the same JWT lifetime that
+     * was used to sign the token (jwtUtil.sessionExpirationMs()), so the
+     * cookie persistence and the token expiry never drift apart.
      */
-    private void setAuthCookie(HttpServletResponse response, String token) {
+    private void setAuthCookie(HttpServletResponse response, String token, long maxAgeSeconds) {
         ResponseCookie cookie = ResponseCookie.from(AUTH_COOKIE_NAME, token)
                 .httpOnly(true)
                 .secure(true)
                 .sameSite("Lax")
                 .path("/")
-                .maxAge(jwtExpirationMs / 1000)
+                .maxAge(maxAgeSeconds)
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }
@@ -69,6 +85,43 @@ public class AuthController {
                 .maxAge(0)
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+    }
+
+    /**
+     * REMEMBER-ME: revoke every outstanding session for the user who owns the
+     * presented token by stamping their token_issued_at watermark. The JWT
+     * filter rejects any token whose iat precedes it, so a remember-me token
+     * (valid for up to 14 days) is cut short the moment the user logs out.
+     * Best effort — if the token is missing, already invalid, or the lookup
+     * fails, we simply continue with the cookie already cleared.
+     */
+    private void revokeAllUserSessions(HttpServletRequest request) {
+        String token = resolveCookieToken(request);
+        if (token == null) return;
+        try {
+            String email = jwtUtil.extractEmail(token);
+            if (email == null) return;
+            userRepository.findByEmail(email).ifPresent(user -> {
+                user.setTokenIssuedAt(Instant.now());
+                userRepository.save(user);
+            });
+        } catch (Exception e) {
+            log.warn("Logout session revocation skipped: {}", e.getMessage());
+        }
+    }
+
+    private String resolveCookieToken(HttpServletRequest request) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies != null) {
+            for (Cookie cookie : cookies) {
+                if (AUTH_COOKIE_NAME.equals(cookie.getName())
+                        && cookie.getValue() != null
+                        && !cookie.getValue().isBlank()) {
+                    return cookie.getValue();
+                }
+            }
+        }
+        return null;
     }
 
     @PostMapping("/register")
@@ -93,10 +146,18 @@ public class AuthController {
     ) {
         AuthResponse authResponse = authService.login(request);
 
+        // REMEMBER-ME: pick the token lifetime the backend just used (regular
+        // session, or the longer remember-me session) and mirror it in the
+        // cookie's max-age so the browser persists it for exactly as long as
+        // the JWT is valid. A ticked checkbox is never trusted by itself —
+        // the flag is confirmed and selected server-side.
+        boolean rememberMe = Boolean.TRUE.equals(request.getRememberMe());
+        long maxAgeSeconds = jwtUtil.sessionExpirationMs(rememberMe) / 1000;
+
         // BUG-004 FIX: deliver the token via httpOnly cookie instead of the
         // JSON body, then strip it from the body so it's never reachable
         // from JavaScript at all.
-        setAuthCookie(response, authResponse.getToken());
+        setAuthCookie(response, authResponse.getToken(), maxAgeSeconds);
         authResponse.setToken(null);
 
         return ResponseEntity.ok(authResponse);
@@ -104,9 +165,18 @@ public class AuthController {
 
     // BUG-004 FIX: new endpoint — client-side JS cannot delete an httpOnly
     // cookie itself, so logout has to be a server round-trip that clears it.
+    // REMEMBER-ME: on top of clearing the cookie, logout also stamps the
+    // user's token_issued_at watermark. This revokes every outstanding JWT for
+    // that user server-side (including any long-lived remember-me token), so
+    // a logout cannot be silently undone by replaying a previously-issued or
+    // stolen cookie. New logins issue a fresh token past the new watermark.
     @PostMapping("/logout")
-    public ResponseEntity<ApiResponse> logout(HttpServletResponse response) {
+    public ResponseEntity<ApiResponse> logout(
+            HttpServletRequest request,
+            HttpServletResponse response
+    ) {
         clearAuthCookie(response);
+        revokeAllUserSessions(request);
         return ResponseEntity.ok(ApiResponse.success("Logged out successfully"));
     }
 
