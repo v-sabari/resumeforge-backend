@@ -191,4 +191,44 @@ public class AiController {
         if (guard != null) return guard;
         return handle(() -> aiService.generateInterviewPrep(user, request));
     }
+
+    /**
+     * CHAT-01: Premium-only conversational resume builder — single turn.
+     * Rejects Free users with 403 BEFORE any AI spend.
+     */
+    @PostMapping("/chat")
+    public ResponseEntity<Object> chat(
+            @AuthenticationPrincipal User user,
+            @Valid @RequestBody AiRequest request) {
+        ResponseEntity<Object> guard = rejectIfUnauthenticated(user);
+        if (guard != null) return guard;
+        ResponseEntity<Object> prem = rejectIfNotPremium(user);
+        if (prem != null) return prem;
+        return handle(() -> aiService.chatWithAI(user, request));
+    }
+
+    /**
+     * CHAT-01: Premium-only resume generation from conversation context.
+     */
+    @PostMapping("/chat/generate")
+    public ResponseEntity<Object> generateResumeFromChat(
+            @AuthenticationPrincipal User user,
+            @Valid @RequestBody AiRequest request) {
+        ResponseEntity<Object> guard = rejectIfUnauthenticated(user);
+        if (guard != null) return guard;
+        ResponseEntity<Object> prem = rejectIfNotPremium(user);
+        if (prem != null) return prem;
+        return handle(() -> aiService.generateResumeFromChat(user, request));
+    }
+
+    private ResponseEntity<Object> rejectIfNotPremium(User user) {
+        if (user == null || !user.isPremium()) {
+            return ResponseEntity
+                    .status(HttpStatus.FORBIDDEN)
+                    .body(ApiResponse.error(
+                            "The AI Resume Builder is a Premium feature. Please upgrade to Premium to build your resume through AI conversation.",
+                            "PREMIUM_REQUIRED"));
+        }
+        return null;
+    }
 }

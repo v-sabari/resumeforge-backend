@@ -7,7 +7,9 @@ import com.resumeforge.ai.dto.AiRequest;
 import com.resumeforge.ai.entity.AiUsageLog;
 import com.resumeforge.ai.entity.User;
 import com.resumeforge.ai.exception.AiException;
+import com.resumeforge.ai.exception.BadRequestException;
 import com.resumeforge.ai.exception.RateLimitException;
+import com.resumeforge.ai.exception.UnauthorizedException;
 import com.resumeforge.ai.repository.AiUsageLogRepository;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
@@ -72,6 +74,16 @@ public class AiService {
 
     private static final int FREE_DAILY_LIMIT    = 5;
     private static final int PREMIUM_DAILY_LIMIT = 50;
+
+    // CHAT-01: cost-control / anti-abuse limits for the conversational builder.
+    // Conversational LLM turns are more expensive than single-shot prompts, so
+    // we cap session length, per-turn input/output length, and the daily chat
+    // budget. These are generous for a real Premium user but prevent runaway spend.
+    private static final int MAX_CHAT_MESSAGES        = 60;   // whole conversation (user+assistant)
+    private static final int MAX_CHAT_INPUT_CHARS     = 3000; // per-turn user message
+    private static final int MAX_CHAT_CONTEXT_CHARS   = 9000; // resume context blob
+    private static final int MAX_CHAT_OUTPUT_CHARS    = 2000; // model response ceiling (prompt-instructed)
+    private static final int CHAT_DAILY_LIMIT         = 150;  // premium-only daily chat turns
 
     @Autowired
     private AiUsageLogRepository aiUsageLogRepository;
@@ -270,6 +282,53 @@ public class AiService {
         return callOpenRouter(user, "interview_prep", buildInterviewPrepPrompt(request));
     }
 
+    /**
+     * CHAT-01: Premium-only conversational resume builder — single turn.
+     *
+     * The client sends the full in-memory conversation history each turn and we
+     * forward it (role/content) to OpenRouter so the model can keep context and
+     * avoid re-asking questions. This is path-gated to Premium users only:
+     * {@link #requirePremium(User)} hard-blocks Free users with a 403 before any
+     * AI/OpenRouter spend occurs.
+     */
+    public JsonNode chatWithAI(User user, AiRequest request) {
+        requirePremium(user);
+        List<AiRequest.ChatMessage> history = request.getChatHistory();
+        if (history == null || history.isEmpty()) {
+            throw new BadRequestException("A user message is required to continue the conversation.");
+        }
+        if (history.size() > MAX_CHAT_MESSAGES) {
+            throw new BadRequestException(
+                    "Conversation too long. Maximum " + MAX_CHAT_MESSAGES +
+                            " messages per session. Please start a new conversation or clear it.");
+        }
+        return callOpenRouterChat(user, "chat_builder",
+                buildChatMessages(request), buildChatPrompt(request));
+    }
+
+    /**
+     * CHAT-01: Premium-only resume generation from the conversation context.
+     * Converts the resume info collected during the chat into structured JSON
+     * (summary, skills, experience, projects, education, certifications) using
+     * ONLY what the user actually provided.
+     */
+    public JsonNode generateResumeFromChat(User user, AiRequest request) {
+        requirePremium(user);
+        if (!hasText(request.getChatResumeContext())) {
+            throw new BadRequestException(
+                    "No resume information collected yet. Chat with the AI first and then generate your resume.");
+        }
+        return callOpenRouter(user, "chat_resume_generate",
+                buildChatGeneratePrompt(request));
+    }
+
+    private void requirePremium(User user) {
+        if (user == null || !user.isPremium()) {
+            throw new UnauthorizedException(
+                    "The AI Resume Builder is a Premium feature. Please upgrade to Premium to build your resume through AI conversation.");
+        }
+    }
+
     // ── Core call (private, uses RetryTemplate programmatically) ─────────────
 
     private JsonNode callOpenRouter(User user, String feature, String prompt) {
@@ -296,6 +355,228 @@ public class AiService {
             }
             return doHttpCall(user, feature, prompt);
         });
+    }
+
+    /**
+     * CHAT-01: multi-turn variant of {@link #callOpenRouter}. Sends the whole
+     * conversation history (system + user/assistant turns) to OpenRouter as a
+     * proper messages array so the model retains context across turns and does
+     * not re-ask questions. Reuses the SAME OpenRouter client/config as every
+     * other feature — no second integration. Enforces the premium-only chat
+     * daily budget and the per-turn input/output length limits.
+     */
+    private JsonNode callOpenRouterChat(User user, String feature,
+                                         List<Map<String, Object>> messages, String systemPrompt) {
+
+        long usageCount = aiUsageLogRepository
+                .countByUserIdAndFeatureAndCreatedAtAfter(user.getId(), feature,
+                        LocalDateTime.now().minusHours(24));
+        if (usageCount >= (long) CHAT_DAILY_LIMIT) {
+            throw new RateLimitException(
+                    "Premium chat limit reached (" + CHAT_DAILY_LIMIT +
+                            " chat messages per day). Please try again tomorrow.");
+        }
+
+        return retryTemplate.execute(retryCtx -> {
+            if (retryCtx.getRetryCount() > 0) {
+                log.warn("[AiService] Retry attempt {} for feature='{}' after: {}",
+                        retryCtx.getRetryCount(), feature,
+                        retryCtx.getLastThrowable().getMessage());
+            }
+            return doHttpCallWithMessages(user, feature, messages, systemPrompt);
+        });
+    }
+
+    /**
+     * Builds the ordered OpenRouter messages array for a chat turn: a system
+     * message with the no-hallucination rules + context, then the conversation
+     * history (or a single user message if the history was not sent).
+     */
+    private List<Map<String, Object>> buildChatMessages(AiRequest r) {
+        List<Map<String, Object>> messages = new ArrayList<>();
+        List<AiRequest.ChatMessage> history = r.getChatHistory();
+        if (history != null) {
+            for (AiRequest.ChatMessage m : history) {
+                if (m.getContent() == null || m.getContent().isBlank()) continue;
+                String role = ("assistant".equalsIgnoreCase(m.getRole()))
+                        ? "assistant" : "user";
+                messages.add(Map.of("role", role, "content", m.getContent()));
+            }
+        }
+        if (messages.isEmpty()) {
+            messages.add(Map.of("role", "user",
+                    "content", orEmpty(history != null && !history.isEmpty()
+                            ? history.get(history.size() - 1).getContent()
+                            : null)));
+        }
+        return messages;
+    }
+
+    /**
+     * Performs the chat HTTP request to OpenRouter with a system message + message
+     * history. Otherwise mirrors {@link #doHttpCall} (same headers, auth, retry
+     * mapping, JSON parsing, usage logging).
+     */
+    private JsonNode doHttpCallWithMessages(User user, String feature,
+                                            List<Map<String, Object>> history, String systemPrompt) {
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setBearerAuth(openRouterApiKey);
+        headers.set("HTTP-Referer", siteUrl);
+        headers.set("X-Title", siteName);
+
+        List<Map<String, Object>> messages = new ArrayList<>();
+        if (systemPrompt != null && !systemPrompt.isBlank()) {
+            messages.add(Map.of("role", "system", "content", systemPrompt));
+        }
+        messages.addAll(history);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("model", model);
+        body.put("messages", messages);
+        body.put("response_format", Map.of("type", "json_object"));
+        body.put("max_tokens", 1024); // CHAT-01 output ceiling
+
+        HttpEntity<Map<String, Object>> httpEntity = new HttpEntity<>(body, headers);
+
+        log.debug("[AiService] → OpenRouter chat feature='{}' userId={} messages={}",
+                feature, user.getId(), messages.size());
+
+        ResponseEntity<String> response;
+        try {
+            response = restTemplate.exchange(
+                    openRouterBaseUrl, HttpMethod.POST, httpEntity, String.class);
+        } catch (HttpClientErrorException.Unauthorized e) {
+            log.error("[AiService] OpenRouter 401 Unauthorized (chat). keyTail='…{}'.",
+                    maskKey(openRouterApiKey));
+            throw new AiException(AiException.ErrorCode.OPENROUTER_AUTH_ERROR,
+                    "OpenRouter authentication failed. The API key is invalid or revoked.", e);
+        } catch (HttpClientErrorException.Forbidden e) {
+            throw new AiException(AiException.ErrorCode.OPENROUTER_FORBIDDEN,
+                    "Access to the AI model was denied. The model '" + model +
+                            "' may require a paid OpenRouter subscription.", e);
+        } catch (HttpClientErrorException.TooManyRequests e) {
+            throw new AiException(AiException.ErrorCode.OPENROUTER_RATE_LIMIT,
+                    "The AI provider is temporarily rate-limited. Please wait and try again.", e);
+        } catch (HttpClientErrorException e) {
+            throw new AiException(AiException.ErrorCode.AI_SERVICE_ERROR,
+                    "AI request rejected (HTTP " + e.getStatusCode().value() +
+                            "). Check your request content.", e);
+        } catch (HttpServerErrorException e) {
+            log.warn("[AiService] OpenRouter {} for chat feature='{}'. Retrying...",
+                    e.getStatusCode(), feature);
+            throw new AiException(AiException.ErrorCode.OPENROUTER_UNAVAILABLE,
+                    "The AI provider is temporarily unavailable. Please try again shortly.", e);
+        } catch (ResourceAccessException e) {
+            throw new AiException(AiException.ErrorCode.OPENROUTER_UNAVAILABLE,
+                    "Could not reach the AI service (network error). Please try again.", e);
+        } catch (Exception e) {
+            throw new AiException(AiException.ErrorCode.AI_SERVICE_ERROR,
+                    "An unexpected error occurred while calling the AI service.", e);
+        }
+
+        String responseBody = response.getBody();
+        if (responseBody == null || responseBody.isBlank()) {
+            throw new AiException(AiException.ErrorCode.OPENROUTER_EMPTY_RESPONSE,
+                    "The AI service returned an empty response. Please try again.");
+        }
+
+        try {
+            JsonNode envelope = objectMapper.readTree(responseBody);
+            String rawContent = envelope.at("/choices/0/message/content").asString(null);
+            if (rawContent == null || rawContent.isBlank()) {
+                throw new AiException(AiException.ErrorCode.OPENROUTER_EMPTY_RESPONSE,
+                        "The AI service returned no content. Please try again.");
+            }
+            int inputTokens  = envelope.at("/usage/prompt_tokens").asInt(0);
+            int outputTokens = envelope.at("/usage/completion_tokens").asInt(0);
+            log.debug("[AiService] ← OpenRouter chat OK feature='{}' userId={} in={} out={}",
+                    feature, user.getId(), inputTokens, outputTokens);
+            aiUsageLogRepository.save(AiUsageLog.builder()
+                    .userId(user.getId())
+                    .feature(feature)
+                    .inputTokens(inputTokens)
+                    .outputTokens(outputTokens)
+                    .build());
+            try {
+                return objectMapper.readTree(rawContent);
+            } catch (Exception parseEx) {
+                log.error("[AiService] Chat model returned non-JSON content: {}", rawContent, parseEx);
+                throw new AiException(AiException.ErrorCode.AI_SERVICE_ERROR,
+                        "The AI returned an unexpected format. Please try again.", parseEx);
+            }
+        } catch (AiException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new AiException(AiException.ErrorCode.AI_SERVICE_ERROR,
+                    "Failed to parse the chat AI response. Please try again.", e);
+        }
+    }
+
+    /**
+     * CHAT-01: validates and enforces per-turn input length limits, then builds
+     * the orchestration prompt for a chat turn.
+     */
+    private String buildChatPrompt(AiRequest r) {
+        String userMessage = null;
+        List<AiRequest.ChatMessage> history = r.getChatHistory();
+        if (history != null && !history.isEmpty()) {
+            AiRequest.ChatMessage last = history.get(history.size() - 1);
+            userMessage = last.getContent();
+        }
+        if (userMessage != null && userMessage.length() > MAX_CHAT_INPUT_CHARS) {
+            throw new BadRequestException(
+                    "Your message is too long (" + userMessage.length() +
+                            " chars). Max allowed is " + MAX_CHAT_INPUT_CHARS + ".");
+        }
+        String context = r.getChatResumeContext();
+        if (context != null && context.length() > MAX_CHAT_CONTEXT_CHARS) {
+            throw new BadRequestException(
+                    "The collected resume context is too large. Please clear the conversation and start fresh.");
+        }
+
+        return "You are an expert, empathetic AI resume-building coach guiding the user to build a professional " +
+                "resume through conversation. You have already collected this resume information from the user " +
+                "(KNOWLEDGE SO FAR):\n" + orEmpty(context) + "\n\n" +
+                "ONLY use information the user has actually provided. NEVER invent skills, experience, projects, " +
+                "achievements, certifications, education, job titles, companies, metrics, or responsibilities. " +
+                "If you are missing something, ask for it instead of guessing.\n\n" +
+                "You are building the resume by gathering, in priority order, the sections the user actually has: " +
+                "personal info, career summary, education, skills, experience, internships, projects, certifications, " +
+                "achievements, and additional info. Do NOT force sections the user does not have — skip irrelevant ones. " +
+                "Ask ONE relevant question at a time to fill the most important remaining gaps. " +
+                "Do not repeat a question already answered or already asked (see the history). " +
+                "When you have enough information to build a strong resume, tell the user and offer to generate it.\n\n" +
+                "Conversation must be honest and truthful. Respond with ONLY JSON:\n" +
+                "{\"reply\": \"your next question or response to the user\", " +
+                "\"readyToGenerate\": true/false, \"missingSections\": [\"section names still missing\"], " +
+                "\"collectedInfo\": {\"updated context blob summarizing all info gathered so far — keep it concise but complete\"}}\n\n" +
+                "Keep reply concise (under " + MAX_CHAT_OUTPUT_CHARS + " chars) and focused on continuing the conversation.";
+    }
+
+    /**
+     * CHAT-01: builds the prompt that converts the collected conversation
+     * context into structured resume JSON. Strict no-hallucination rule: the
+     * output may ONLY contain information the user actually provided.
+     */
+    private String buildChatGeneratePrompt(AiRequest r) {
+        String context = r.getChatResumeContext();
+        return "Convert the resume information collected from this user into a structured resume object.\n\n" +
+                "=== Information collected from the user ===\n" + orEmpty(context) + "\n\n" +
+                "STRICT RULE: Output ONLY information the user actually provided. Never invent skills, experience, " +
+                "projects, achievements, certifications, education, job titles, companies, metrics, or responsibilities. " +
+                "Leave a string field empty or an array field empty if the user did not provide that information. " +
+                "Write the summary and any bullet points using ONLY the user's own facts, professionally reworded.\n\n" +
+                "Respond with ONLY valid JSON matching exactly this schema, no other text:\n" +
+                "{\"fullName\": \"\", \"professionalTitle\": \"\", \"email\": \"\", \"phone\": \"\", " +
+                "\"location\": \"\", \"summary\": \"\", " +
+                "\"skills\": [\"skill\"], " +
+                "\"experience\": [{\"company\": \"\", \"role\": \"\", \"location\": \"\", \"startDate\": \"\", \"endDate\": \"\", \"summary\": \"\", \"bullets\": [\"bullet\"]}], " +
+                "\"projects\": [{\"name\": \"\", \"role\": \"\", \"techStack\": \"\", \"description\": \"\", \"highlights\": [\"highlight\"]}], " +
+                "\"education\": [{\"institution\": \"\", \"degree\": \"\", \"field\": \"\", \"grade\": \"\", \"startDate\": \"\", \"endDate\": \"\", \"details\": \"\"}], " +
+                "\"certifications\": [{\"name\": \"\", \"issuer\": \"\", \"year\": \"\"}], " +
+                "\"achievements\": [\"achievement\"]}";
     }
 
     /**

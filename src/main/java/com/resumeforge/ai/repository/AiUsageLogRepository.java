@@ -16,6 +16,10 @@ public interface AiUsageLogRepository extends JpaRepository<AiUsageLog, Long> {
 
     long countByUserIdAndCreatedAtAfter(Long userId, LocalDateTime after);
 
+    // CHAT-01: per-user per-feature daily count — used for the premium chat
+    // daily budget so a conversational user cannot exceed their cap.
+    long countByUserIdAndFeatureAndCreatedAtAfter(Long userId, String feature, LocalDateTime after);
+
     @Query("SELECT a.feature, COUNT(a) FROM AiUsageLog a GROUP BY a.feature ORDER BY COUNT(a) DESC")
     List<Object[]> getFeatureUsageStats();
 

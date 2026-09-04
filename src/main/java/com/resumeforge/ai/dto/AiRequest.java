@@ -110,4 +110,24 @@ public class AiRequest {
     private String interviewType;       // Technical / HR / Behavioral / Mixed
     private String experienceLevel;     // Fresher / Internship / Experienced
     private Integer questionCount;      // Number of questions (e.g. 10, 20, 30)
+
+    // CHAT-01: dedicated fields for the Premium Voice/Chat Resume Builder.
+    // The client maintains the in-memory conversation and sends the full
+    // history each turn (stateless — consistent with the rest of the AI
+    // integration; no conversation DB storage). The AI uses this turn's user
+    // message plus the history to keep context and never repeats questions.
+    private List<ChatMessage> chatHistory;  // [[{role, content}], ...] — ordered conversation
+    private String chatResumeContext;       // current resume info collected so far
+
+    public static class ChatMessage {
+        private String role;    // "user" | "assistant"
+        private String content; // message text
+        private String turn;    // optional: "chat" | "generate" (marker)
+        public String getRole() { return role; }
+        public void setRole(String role) { this.role = role; }
+        public String getContent() { return content; }
+        public void setContent(String content) { this.content = content; }
+        public String getTurn() { return turn; }
+        public void setTurn(String turn) { this.turn = turn; }
+    }
 }
