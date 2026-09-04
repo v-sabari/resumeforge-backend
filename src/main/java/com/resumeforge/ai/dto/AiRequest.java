@@ -94,4 +94,10 @@ public class AiRequest {
     // experience, achievements, skills, or metrics.
     private String coverResumeInfo; // Full resume details (education, skills, experience, projects)
     private String additionalInfo;  // Optional: anything else the user wants mentioned
+
+    // TAILOR-01: dedicated field for the improved Tailor Resume feature. The
+    // form collects the complete resume content so the AI can analyze it against
+    // the job description and suggest improvements — never inventing skills,
+    // experience, achievements, or metrics that are not already present.
+    private String tailorResumeInfo; // Complete resume content for tailoring
 }

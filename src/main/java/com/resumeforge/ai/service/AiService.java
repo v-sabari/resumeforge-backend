@@ -646,21 +646,40 @@ public class AiService {
     }
 
     private String buildTailorPrompt(AiRequest r) {
-        return "Tailor this resume content to match the following job description. " +
-                "Emphasize relevant skills and experience while maintaining honesty — " +
-                "do not invent experience that wasn't provided.\n\n" +
-                "Target role: " + orEmpty(r.getTargetRole()) + "\n" +
-                "Job description:\n" + orEmpty(r.getJobDescription()) + "\n\n" +
-                "Current summary: " + orEmpty(r.getCurrentSummary()) + "\n" +
-                "Current skills: " + joinOrNone(r.getSkills()) + "\n" +
-                "Current experience bullets by role:\n" + joinGroupsOrNone(r.getExperienceBulletGroups()) + "\n" +
-                "Respond with ONLY valid JSON matching exactly this schema, no other text:\n" +
-                "{\"tailoredSummary\": \"...\", " +
-                "\"tailoredBulletGroups\": [[\"bullet\", \"bullet\"], [\"bullet\"]], " +
-                "\"suggestedSkillsToAdd\": [\"skill\"], " +
-                "\"keywordsMissing\": [\"keyword\"]}\n" +
-                "(tailoredBulletGroups must have the same number of groups, in the same order, " +
-                "as \"Current experience bullets by role\" above.)";
+        // TAILOR-01: analyze the resume against the job description and suggest
+        // improvements. The AI must NEVER add information that does not exist in
+        // the original resume — no fabricated skills, technologies, experience,
+        // projects, achievements, certifications, metrics, or responsibilities.
+        // Skills the job requires but the user lacks are reported as MISSING
+        // keywords, never inserted into the resume.
+        return "You are an expert resume tailoring analyst. Analyze the candidate's resume " +
+                "against the target job description and suggest truthful improvements.\n\n" +
+                "IMPORTANT RULE: Never add information that does not exist in the original resume. " +
+                "Do NOT invent skills, technologies, experience, projects, achievements, " +
+                "certifications, metrics, or responsibilities. If the job requires a skill the user " +
+                "does not have, list it as a MISSING keyword instead of adding it to the resume.\n\n" +
+                "=== Target job title ===\n" + orEmpty(r.getTargetRole()) + "\n\n" +
+                "=== Job description ===\n" + orEmpty(r.getJobDescription()) + "\n\n" +
+                "=== Complete resume content ===\n" + orEmpty(r.getTailorResumeInfo()) + "\n\n" +
+                "=== Improve (truthfully) ===\n" +
+                "1. Resume summary: reword it to emphasize the most job-relevant experience and skills " +
+                "already present, without adding new claims.\n" +
+                "2. Skills presentation: reorder/group the candidate's existing skills to surface the " +
+                "ones most relevant to the job. Only include skills already in the resume.\n" +
+                "3. Experience/project bullets: reword existing bullets to better highlight job-relevant " +
+                "responsibilities and impact, without inventing responsibilities, metrics, or projects.\n" +
+                "4. Relevant keywords: identify keywords already present in the resume that match the job.\n" +
+                "5. Suggestions: practical, honest tips to improve job relevance.\n\n" +
+                "=== Output format ===\n" +
+                "Respond with ONLY valid JSON matching exactly this schema, no other text, no Markdown, no code fences:\n" +
+                "{\"tailoredSummary\": \"improved summary\", " +
+                "\"tailoredSkills\": [\"existing skill\"], " +
+                "\"tailoredBullets\": [\"improved resume bullet\"], " +
+                "\"matchingKeywords\": [\"Java\"], " +
+                "\"missingKeywords\": [\"Spring Boot\"], " +
+                "\"suggestions\": [\"improvement suggestion\"]}\n" +
+                "\"tailoredSkills\" must contain ONLY skills already present in the resume. " +
+                "\"missingKeywords\" lists job-description skills absent from the resume (do not add them to the resume).";
     }
 
     private String buildAtsScorePrompt(AiRequest r) {
