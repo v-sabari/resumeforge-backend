@@ -1,0 +1,20 @@
+NOTICE — Bundled fonts
+========================
+
+The files in this directory
+
+    DejaVuSans.ttf
+    DejaVuSans-Bold.ttf
+
+are the "DejaVu Sans" and "DejaVu Sans Bold" fonts.
+
+Copyright (c) 2003-2021 The DejaVu Authors.
+
+These font files are redistributed under the SIL Open Font License,
+Version 1.1 (https://openfontlicense.org/).
+
+They are bundled with this proprietary software solely for the purpose of
+rendering user-supplied resume content to PDF/DOCX/TXT. The SIL Open Font
+License permits redistribution under the conditions of that license; it is
+not owned by or granted exclusivity to ResumeForge AI, and the omission of
+this notice would be an improper relicensing of third-party Font Software.
