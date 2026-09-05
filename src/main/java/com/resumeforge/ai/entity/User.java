@@ -30,6 +30,13 @@ public class User {
     @Column(name = "password_hash", nullable = false, length = 255)
     private String passwordHash;
 
+    // GOOGLE SIGN-IN: non-null for accounts created or linked via Google.
+    // Nullable for password-registered users. Referenced by UserRepository
+    // findByGoogleId. Kept out of JSON responses (not a field the frontend needs).
+    @JsonIgnore
+    @Column(name = "google_id", length = 64)
+    private String googleId;
+
     @Column(name = "role", nullable = false, length = 30)
     @Builder.Default
     private String role = "USER";

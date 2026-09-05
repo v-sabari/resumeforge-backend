@@ -8,6 +8,7 @@ import com.resumeforge.ai.repository.UserRepository;
 import com.resumeforge.ai.security.JwtUtil;
 import com.resumeforge.ai.util.OtpUtil;
 import com.resumeforge.ai.util.TokenUtil;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -18,6 +19,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Service
 public class AuthService {
@@ -36,6 +38,9 @@ public class AuthService {
 
     @Autowired
     private ReferralService referralService;
+
+    @Autowired
+    private GoogleAuthService googleAuthService;
 
     @Transactional
     public ApiResponse register(RegisterRequest request) {
@@ -146,6 +151,80 @@ public class AuthService {
         return AuthResponse.builder()
                 .token(token)
                 .user(toUserResponse(user))
+                .build();
+    }
+
+    /**
+     * GOOGLE SIGN-IN: verify the presented Google ID token, then create a new
+     * account if the Google account (or its verified email) is unknown, or log
+     * in / link an existing one. Google-verified emails bypass the OTP flow
+     * entirely.
+     *
+     * Returns an {@link AuthResponse} whose {@code isNewUser} flag tells the
+     * frontend whether this was a first-time signup (true) or a returning-user
+     * login (false) — so the UI can branch on it.
+     */
+    @Transactional
+    public AuthResponse googleLogin(GoogleAuthRequest request) {
+        GoogleIdToken.Payload payload = googleAuthService.verify(request.getCredential());
+        String googleId = payload.getSubject();
+        String email = payload.getEmail();   // Google-verified email
+        String name = (String) payload.get("name");
+        if (email == null || googleId == null) {
+            throw new BadRequestException("Google account missing email or id");
+        }
+
+        User user = userRepository.findByGoogleId(googleId)
+                .orElseGet(() -> userRepository.findByEmail(email).orElse(null));
+
+        boolean isNewUser = false;
+
+        if (user == null) {
+            // Brand-new account. password_hash is NOT NULL, so give it a random
+            // BCrypt value that can never match any real password — password
+            // login for a Google-only account always fails.
+            user = User.builder()
+                    .name(name != null ? name : email)
+                    .email(email)
+                    .password(passwordEncoder.encode(UUID.randomUUID().toString()))
+                    .role("USER")
+                    .premium(false)
+                    .googleId(googleId)
+                    .emailVerified(true)
+                    .build();
+            user = userRepository.save(user);
+
+            referralService.ensureReferralCode(user);
+
+            // Attach + immediately settle any referral: Google-verified
+            // emails are already confirmed, so a referred Google signup counts
+            // for the referrer's milestone right away.
+            referralService.attachReferralAtSignup(user, request.getReferralCode());
+            referralService.onUserEmailVerified(user);
+
+            isNewUser = true;
+        } else {
+            // Existing account: record this Google id so future logins resolve
+            // via the fast google_id index instead of the email lookup.
+            if (user.getGoogleId() == null) {
+                user.setGoogleId(googleId);
+            }
+            // If an account existed but was never email-verified via OTP, a
+            // verified Google email is conclusive — upgrade it and settle any
+            // pending referral reward.
+            if (!user.isEmailVerified()) {
+                user.setEmailVerified(true);
+                referralService.onUserEmailVerified(user);
+            }
+            userRepository.save(user);
+        }
+
+        String token = jwtUtil.generateToken(user.getEmail(), user.getId());
+
+        return AuthResponse.builder()
+                .token(token)
+                .user(toUserResponse(user))
+                .isNewUser(isNewUser)
                 .build();
     }
 

@@ -163,6 +163,28 @@ public class AuthController {
         return ResponseEntity.ok(authResponse);
     }
 
+    // GOOGLE SIGN-IN: same button/flow serves both login and registration —
+    // AuthService.googleLogin creates the account when it doesn't exist yet and
+    // returns isNewUser=true, so the frontend can branch on it. The credential
+    // is a Google ID token whose audience must match our GOOGLE_CLIENT_ID
+    // (enforced inside GoogleAuthService).
+    @PostMapping("/google")
+    public ResponseEntity<AuthResponse> google(
+            @Valid @RequestBody GoogleAuthRequest request,
+            HttpServletResponse response
+    ) {
+        AuthResponse authResponse = authService.googleLogin(request);
+
+        // Regular (non remember-me) session lifetime — Google logins never
+        // present a remember-me choice.
+        long maxAgeSeconds = jwtUtil.sessionExpirationMs(false) / 1000;
+
+        setAuthCookie(response, authResponse.getToken(), maxAgeSeconds);
+        authResponse.setToken(null);
+
+        return ResponseEntity.ok(authResponse);
+    }
+
     // BUG-004 FIX: new endpoint — client-side JS cannot delete an httpOnly
     // cookie itself, so logout has to be a server round-trip that clears it.
     // REMEMBER-ME: on top of clearing the cookie, logout also stamps the
