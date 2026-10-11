@@ -124,6 +124,13 @@ public class PaymentWebhookController {
             userRepository.findById(payment.getUserId()).ifPresent(user -> {
 
                 user.setPremium(true);
+                // SEC/BUS FIX: match PaymentService.verifyPayment — a paid
+                // (permanent) activation must clear any leftover referral
+                // expiry. Without this, a user who had an EXPIRED referral
+                // premiumExpiresAt set and had premium only activated via this
+                // webhook fallback would still read as non-premium through
+                // User.isPremium() even after paying.
+                user.setPremiumExpiresAt(null);
                 userRepository.save(user);
 
                 log.info("Premium activated for userId={}", user.getId());

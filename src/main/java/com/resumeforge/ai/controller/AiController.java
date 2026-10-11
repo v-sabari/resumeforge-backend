@@ -144,6 +144,10 @@ public class AiController {
             @Valid @RequestBody AiRequest request) {
         ResponseEntity<Object> guard = rejectIfUnauthenticated(user);
         if (guard != null) return guard;
+        // AI-04 FIX: Resume Tailoring is an advertised Premium feature; enforce
+        // premium server-side so it cannot be bypassed by calling the API directly.
+        ResponseEntity<Object> prem = rejectIfNotPremium(user);
+        if (prem != null) return prem;
         return handle(() -> aiService.tailorToJob(user, request));
     }
 
@@ -162,6 +166,12 @@ public class AiController {
             @Valid @RequestBody AiRequest request) {
         ResponseEntity<Object> guard = rejectIfUnauthenticated(user);
         if (guard != null) return guard;
+        // AI-04 FIX: Cover Letter is an advertised Premium feature (frontend
+        // AIActionPanel marks it Pro and refuses to call it for free users),
+        // but this endpoint previously had no server-side premium check, so a
+        // free user could call it directly. Enforce premium here too.
+        ResponseEntity<Object> prem = rejectIfNotPremium(user);
+        if (prem != null) return prem;
         return handle(() -> aiService.generateCoverLetter(user, request));
     }
 
@@ -189,6 +199,10 @@ public class AiController {
             @Valid @RequestBody AiRequest request) {
         ResponseEntity<Object> guard = rejectIfUnauthenticated(user);
         if (guard != null) return guard;
+        // AI-04 FIX: Interview Prep is an advertised Premium feature; enforce
+        // premium server-side so it cannot be bypassed by calling the API directly.
+        ResponseEntity<Object> prem = rejectIfNotPremium(user);
+        if (prem != null) return prem;
         return handle(() -> aiService.generateInterviewPrep(user, request));
     }
 
@@ -226,7 +240,7 @@ public class AiController {
             return ResponseEntity
                     .status(HttpStatus.FORBIDDEN)
                     .body(ApiResponse.error(
-                            "The AI Resume Builder is a Premium feature. Please upgrade to Premium to build your resume through AI conversation.",
+                            "This is a Premium feature. Please upgrade to Premium to continue.",
                             "PREMIUM_REQUIRED"));
         }
         return null;

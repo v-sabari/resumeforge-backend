@@ -137,30 +137,31 @@ public class ExportService {
                 .build();
     }
 
-    // SEC/BUS FIX: the frontend calls /api/export/record BEFORE downloading, so
-    // this is the effective accounting point for the free daily export quota.
-    // Previously recordExport() saved a row with no quota check at all — the
-    // "3 free exports/day" limit was only advisory. Now it delegates to
-    // checkAndRecordExport(), which enforces the limit atomically (free users:
-    // 3 exports per rolling 24h; premium: unlimited) and rejects with 429 once
-    // exceeded. The frontend ignores the response body, so returning
-    // ExportStatusResponse instead of ApiResponse is backwards-compatible.
-    @Transactional
+    // SEC/BUS FIX (EXPORT-02): a free user could bypass the free daily export
+    // quota entirely by calling the download endpoints directly and never
+    // calling /api/export/record — the old download "backstop" only blocked
+    // when MORE than FREE_LIMIT rows had already been recorded, which never
+    // happened if /record was never called, so an unlimited number of files
+    // could be downloaded. The download endpoints (exportToPdf/Docx/Txt) are
+    // now the single accounting point: they check the quota and record the
+    // export atomically (see checkAndRecordDownload). This method is retained
+    // only for backward compatibility and is now a pure, side-effect-free
+    // check, so the frontend's existing /record call (immediately followed by
+    // a download) cannot double-count.
     public ExportStatusResponse recordExport(User user, ExportRecordRequest request) {
-        return checkAndRecordExport(user, request.getResumeId(), request.getFormat());
+        return checkExportAccess(user);
     }
 
     /**
-     * SEC/BUS FIX: hard backstop on the download paths. /api/export/record is the
-     * accounting point, but the actual download endpoints (pdf/docx/txt) would
-     * still serve a file to a free user past the limit (e.g. a script calling
-     * download directly without recording, or a stale/duplicated record edge case).
-     * The guard is deliberately {@code countRecent > FREE_LIMIT} (strictly greater),
-     * NOT {@code >=}: the frontend records BEFORE downloading, so a legit third
-     * export already has 3 rows on record and must still be allowed.
+     * SEC/BUS FIX (EXPORT-02): the download paths are the effective accounting
+     * point for the free daily export quota. This checks the quota and records
+     * the export atomically, then throws 429 when the free limit is reached so
+     * a free user cannot obtain an unlimited number of files by calling the
+     * download endpoint directly without first recording. Premium users are
+     * exempt (checkAndRecordExport returns canExport=true for them).
      */
-    private void enforceExportQuota(User user) {
-        if (!user.isPremium() && countRecent(user) > FREE_LIMIT) {
+    private void checkAndRecordDownload(User user, Long resumeId, String format) {
+        if (!checkAndRecordExport(user, resumeId, format).isCanExport()) {
             throw new RateLimitException(
                     "Free export limit reached (3 per day). Upgrade to premium for unlimited exports.");
         }
@@ -181,7 +182,7 @@ public class ExportService {
        ================================================================ */
 
     public byte[] exportToPdf(User user, Long resumeId) {
-        enforceExportQuota(user);
+        checkAndRecordDownload(user, resumeId, "PDF");
         Resume resume = load(user, resumeId);
         Map<String, Object> payload = buildRenderPayload(resume);
 
@@ -469,7 +470,7 @@ public class ExportService {
        ================================================================ */
 
     public byte[] exportToDocx(User user, Long resumeId) {
-        enforceExportQuota(user);
+        checkAndRecordDownload(user, resumeId, "DOCX");
         Resume resume = load(user, resumeId);
         try (XWPFDocument doc = new XWPFDocument()) {
             CTSectPr sp = doc.getDocument().getBody().addNewSectPr();
@@ -623,7 +624,7 @@ public class ExportService {
        ================================================================ */
 
     public byte[] exportToTxt(User user, Long resumeId) {
-        enforceExportQuota(user);
+        checkAndRecordDownload(user, resumeId, "TXT");
         Resume resume = load(user, resumeId);
         StringBuilder t = new StringBuilder();
 
