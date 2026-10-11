@@ -59,6 +59,12 @@ public class SecurityConfig {
         return new SensitiveEndpointRateLimitFilter();
     }
 
+    // FEEDBACK: max 3 submissions / 10 min / IP (own window, see the filter).
+    @Bean
+    public FeedbackRateLimitFilter feedbackRateLimitFilter() {
+        return new FeedbackRateLimitFilter();
+    }
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     // -------------------- STARTUP VALIDATION --------------------
@@ -94,6 +100,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/contact").permitAll()
                         .requestMatchers("/api/testimonials/**").permitAll()
+                        // FEEDBACK: submit + public listing are public. POST is
+                        // throttled by FeedbackRateLimitFilter.
+                        .requestMatchers("/api/feedback/**").permitAll()
                         .requestMatchers("/health", "/api/health/**").permitAll()
 
                         // IMPORTANT: Razorpay webhook must be public
@@ -113,6 +122,7 @@ public class SecurityConfig {
                 // ahead of jwtAuthenticationFilter in the chain.
                 .addFilterBefore(loginRateLimitFilter(), UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(sensitiveEndpointRateLimitFilter(), UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(feedbackRateLimitFilter(), UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
