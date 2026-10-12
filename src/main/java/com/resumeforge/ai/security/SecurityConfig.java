@@ -97,6 +97,7 @@ public class SecurityConfig {
                         ex.authenticationEntryPoint(unauthorizedEntryPoint())
                 )
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/api/public/**").permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/contact").permitAll()
                         .requestMatchers("/api/testimonials/**").permitAll()

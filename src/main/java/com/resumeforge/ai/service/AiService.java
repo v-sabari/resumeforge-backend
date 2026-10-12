@@ -322,6 +322,22 @@ public class AiService {
                 buildChatGeneratePrompt(request));
     }
 
+    /**
+     * TOOLS-01: anonymous, best-effort semantic enrichment for the free
+     * JD-Based ATS Score Checker. Reuses the exact same OpenRouter client,
+     * retry policy and JSON response handling as every other feature, but
+     * does NOT attach a user and does NOT write an {@link AiUsageLog} (the
+     * free tool is public/anonymous, there is no user to charge).
+     *
+     * <p>The caller treats any thrown {@link AiException} as non-fatal and
+     * falls back to the fully deterministic result — this method never
+     * invents a score, it only asks the model which missing job terms appear
+     * to be covered by an equivalent term in the resume.</p>
+     */
+    public JsonNode publicSemanticMatch(String prompt) {
+        return retryTemplate.execute(retryCtx -> doHttpCall(null, "public_tool_semantic", prompt));
+    }
+
     private void requirePremium(User user) {
         if (user == null || !user.isPremium()) {
             throw new UnauthorizedException(
@@ -589,6 +605,10 @@ public class AiService {
      */
     private JsonNode doHttpCall(User user, String feature, String prompt) {
 
+        // TOOLS-01: the public free tools call this with a null user; usage is
+        // logged only when a real user is attached.
+        String userIdForLog = user == null ? "anonymous" : String.valueOf(user.getId());
+
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setBearerAuth(openRouterApiKey);
@@ -605,7 +625,7 @@ public class AiService {
         HttpEntity<Map<String, Object>> httpEntity = new HttpEntity<>(body, headers);
 
         log.debug("[AiService] → OpenRouter feature='{}' userId={} model='{}'",
-                feature, user.getId(), model);
+                feature, userIdForLog, model);
 
         ResponseEntity<String> response;
         try {
@@ -681,14 +701,16 @@ public class AiService {
             int outputTokens = envelope.at("/usage/completion_tokens").asInt(0);
 
             log.debug("[AiService] ← OpenRouter OK feature='{}' userId={} in={} out={}",
-                    feature, user.getId(), inputTokens, outputTokens);
+                    feature, userIdForLog, inputTokens, outputTokens);
 
-            aiUsageLogRepository.save(AiUsageLog.builder()
-                    .userId(user.getId())
-                    .feature(feature)
-                    .inputTokens(inputTokens)
-                    .outputTokens(outputTokens)
-                    .build());
+            if (user != null) {
+                aiUsageLogRepository.save(AiUsageLog.builder()
+                        .userId(user.getId())
+                        .feature(feature)
+                        .inputTokens(inputTokens)
+                        .outputTokens(outputTokens)
+                        .build());
+            }
 
             // AI-02 FIX: rawContent is itself a JSON string (we asked the
             // model for response_format=json_object) — parse it and hand

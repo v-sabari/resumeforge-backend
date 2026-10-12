@@ -40,7 +40,12 @@ public class SensitiveEndpointRateLimitFilter extends OncePerRequestFilter {
             new LimitRule("/api/auth/verify-email-otp", 10),
             new LimitRule("/api/auth/resend-email-otp", 5),
             new LimitRule("/api/auth/forgot-password", 5),
-            new LimitRule("/api/contact", 5)
+            new LimitRule("/api/contact", 5),
+            // TOOLS-01/02: the free public ATS tools accept file uploads and (for
+            // the ATS score) trigger an optional paid AI call — keep them from
+            // being hammered anonymously.
+            new LimitRule("/api/public/tools/ats-score", 10),
+            new LimitRule("/api/public/tools/format-check", 15)
     );
 
     private static final long WINDOW_SECONDS = 15 * 60L;   // 15 minutes
