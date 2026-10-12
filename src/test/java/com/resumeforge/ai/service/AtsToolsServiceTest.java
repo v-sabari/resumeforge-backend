@@ -115,4 +115,50 @@ class AtsToolsServiceTest {
         assertThat(r.isTextExtracted()).isTrue();
         assertThat(r.getFileName()).isEqualTo("r.txt");
     }
+
+    @Test
+    void atsScoreWorksOnARealPdfResume() throws Exception {
+        Mockito.when(aiService.publicSemanticMatch(Mockito.anyString())).thenReturn(null);
+
+        byte[] pdf = TestDocuments.singlePagePdf(
+                "John Doe",
+                "john@example.com",
+                "Skills",
+                "Java, Docker, SQL, AWS",
+                "Experience",
+                "Backend Engineer 2018-2023",
+                "Education",
+                "B.Tech Computer Science");
+        String jd = "We need a backend engineer. Required: Java, Docker, Kubernetes, SQL and AWS. "
+                + "Build reliable distributed backend systems.";
+
+        AtsScoreResponse r = service.atsScore(pdf, "resume.pdf", "application/pdf", jd);
+
+        assertThat(r.isAiEnhanced()).isFalse();
+        assertThat(r.getScore()).isBetween(0, 100);
+        assertThat(r.getMatchedKeywords()).contains("java", "docker", "sql", "aws");
+        assertThat(r.getMissingKeywords()).extracting(AtsScoreResponse.KeywordItem::getKeyword)
+                .contains("kubernetes");
+    }
+
+    @Test
+    void atsScoreRejectsAPdfWithNoExtractableText() throws Exception {
+        byte[] pdf = TestDocuments.emptyPdf();
+
+        assertThatThrownBy(() -> service.atsScore(pdf, "scan.pdf", "application/pdf",
+                "Required: Java, Docker, SQL. Build backend services and APIs."))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("No readable text");
+    }
+
+    @Test
+    void formatCheckWorksOnARealPdf() throws Exception {
+        byte[] pdf = TestDocuments.singlePagePdf(
+                "John Doe", "john@example.com", "Skills", "Java, Docker, SQL, AWS, Spring");
+
+        FormatCheckResponse r = service.formatCheck(pdf, "resume.pdf", "application/pdf");
+
+        assertThat(r.isTextExtracted()).isTrue();
+        assertThat(r.getFileName()).isEqualTo("resume.pdf");
+    }
 }

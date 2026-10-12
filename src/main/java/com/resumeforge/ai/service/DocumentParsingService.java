@@ -3,6 +3,7 @@ package com.resumeforge.ai.service;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.apache.pdfbox.text.TextPosition;
@@ -14,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -43,6 +45,19 @@ public class DocumentParsingService {
 
     /** Hard cap on extracted characters kept in memory / sent back. */
     private static final int MAX_EXTRACTED_CHARS = 200_000;
+
+    /**
+     * Hard cap on the number of PDF pages whose text is extracted. A resume is
+     * 1-2 pages; this bounds CPU/memory for a malformed or adversarial document
+     * that claims a huge page count. {@code pageCount} is still reported as the
+     * document's true page count.
+     */
+    private static final int MAX_PDF_PAGES_TO_EXTRACT = 50;
+
+    private static final String MSG_PDF_PASSWORD =
+            "This PDF is password-protected. Please upload an unlocked copy of your resume.";
+    private static final String MSG_PDF_CORRUPT =
+            "The PDF could not be read. It may be corrupted or invalid.";
 
     public ParsedDocument parse(byte[] bytes, String filename, String contentType) {
         if (bytes == null || bytes.length == 0) {
@@ -90,11 +105,16 @@ public class DocumentParsingService {
 
     private ParsedDocument parsePdf(byte[] bytes) {
         try (PDDocument document = Loader.loadPDF(bytes)) {
+            int pageCount = document.getNumberOfPages();
+
             PositionCollector stripper = new PositionCollector();
             stripper.setSortByPosition(true);
+            stripper.setLineSeparator("\n");
+            if (pageCount > MAX_PDF_PAGES_TO_EXTRACT) {
+                stripper.setEndPage(MAX_PDF_PAGES_TO_EXTRACT);
+            }
             String text = stripper.getText(document);
 
-            int pageCount = document.getNumberOfPages();
             int imageCount = 0;
             for (PDPage page : document.getPages()) {
                 imageCount += countPageImages(page);
@@ -102,11 +122,20 @@ public class DocumentParsingService {
 
             boolean multiColumn = detectMultiColumn(stripper.xs, pageCount);
             return build(text, "PDF", pageCount, imageCount, 0, multiColumn, "", garbledPercent(text));
-        } catch (IllegalArgumentException e) {
-            throw e;
-        } catch (Exception e) {
+        } catch (InvalidPasswordException e) {
+            // PDFBox raises this when the document is encrypted and no/empty
+            // password unlocks it — a distinct, user-actionable case.
+            log.info("[DocumentParsingService] Password-protected PDF rejected");
+            throw new IllegalArgumentException(MSG_PDF_PASSWORD);
+        } catch (IOException e) {
+            // Malformed/truncated/invalid PDF stream.
             log.warn("[DocumentParsingService] PDF parse failed: {}", e.getMessage());
-            throw new IllegalArgumentException("The PDF could not be read. It may be corrupted or password-protected.");
+            throw new IllegalArgumentException(MSG_PDF_CORRUPT);
+        } catch (RuntimeException e) {
+            // Defensive: any unexpected PDFBox runtime failure is still a
+            // user-facing "cannot read this PDF", never a 500 with a stack trace.
+            log.warn("[DocumentParsingService] Unexpected PDF parse error: {}", e.getMessage());
+            throw new IllegalArgumentException(MSG_PDF_CORRUPT);
         }
     }
 
@@ -146,12 +175,26 @@ public class DocumentParsingService {
         return middle < total * 0.10 && left > total * 0.20 && right > total * 0.20;
     }
 
-    /** PDFTextStripper that records normalised x positions of every glyph. */
+    /**
+     * PDFTextStripper that records normalised x positions of every glyph.
+     *
+     * <p>ROOT-CAUSE FIX: {@link PDFTextStripper#writeString(String, List)} in
+     * PDFBox is the method that actually appends the extracted line to the
+     * stripper's output writer (it simply delegates to
+     * {@code writeString(String)} → {@code output.write(text)}). The previous
+     * version of this class overrode that method to collect x positions but
+     * never called {@code super.writeString(...)}, so the extractor accumulated
+     * nothing and {@link #getText} always returned an empty string for every
+     * PDF — which is why every PDF, including FlowCV exports, was reported as
+     * "no readable text". Calling {@code super} here writes the text to the
+     * output while we still collect the x positions.
+     */
     private static final class PositionCollector extends PDFTextStripper {
         final List<Float> xs = new ArrayList<>();
 
         @Override
-        protected void writeString(String text, List<TextPosition> textPositions) {
+        protected void writeString(String text, List<TextPosition> textPositions) throws IOException {
+            super.writeString(text, textPositions);
             for (TextPosition tp : textPositions) {
                 float x = tp.getXDirAdj() / 600f;
                 xs.add(Math.max(0f, Math.min(1f, x)));
