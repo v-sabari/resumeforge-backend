@@ -95,6 +95,23 @@ public class Resume {
     @Builder.Default
     private Double layoutScale = 1.0;
 
+    // RESUME TYPOGRAPHY (resume-only): these two columns control how the
+    // chosen template is rendered in the live preview and the exported PDF,
+    // and NOTHING else — the application's own UI never reads them.
+    // fontFamily is an allow-listed identifier (never a raw CSS value);
+    // 'template' means "keep the font stack the template already ships with".
+    // See V27__add_resume_typography.sql.
+    @Column(name = "font_family", nullable = false, length = 32)
+    @Builder.Default
+    private String fontFamily = "template";
+
+    // Base body-text size in px (8.0–13.0). 10.5 is the size every template is
+    // designed around. The frontend converts it to a scoped zoom factor so the
+    // templates' absolute text-[Npx] classes scale uniformly.
+    @Column(name = "font_size", nullable = false)
+    @Builder.Default
+    private Double fontSize = 10.5;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -110,6 +127,8 @@ public class Resume {
         if (updatedAt == null) updatedAt = now;
         if (template == null || template.isBlank()) template = "modern";
         if (layoutScale == null || layoutScale < 0.5 || layoutScale > 1.35) layoutScale = 1.0;
+        if (fontFamily == null || fontFamily.isBlank()) fontFamily = "template";
+        if (fontSize == null || fontSize < 8.0 || fontSize > 13.0) fontSize = 10.5;
     }
 
     @PreUpdate
@@ -117,5 +136,7 @@ public class Resume {
         updatedAt = LocalDateTime.now();
         if (template == null || template.isBlank()) template = "modern";
         if (layoutScale == null || layoutScale < 0.5 || layoutScale > 1.35) layoutScale = 1.0;
+        if (fontFamily == null || fontFamily.isBlank()) fontFamily = "template";
+        if (fontSize == null || fontSize < 8.0 || fontSize > 13.0) fontSize = 10.5;
     }
 }

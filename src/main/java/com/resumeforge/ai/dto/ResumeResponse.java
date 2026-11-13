@@ -30,6 +30,9 @@ public class ResumeResponse {
     private String sectionsConfig;
     // COMPRESS FEATURE: density scale — see Resume.java for details.
     private Double layoutScale;
+    // RESUME TYPOGRAPHY (resume-only) — see Resume.java / V27 migration.
+    private String fontFamily;
+    private Double fontSize;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

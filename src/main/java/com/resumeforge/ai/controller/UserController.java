@@ -56,6 +56,7 @@ public class UserController {
     // -------------------------------------------------------------------------
 
     @GetMapping("/export")
+    @Transactional(readOnly = true)
     public ResponseEntity<byte[]> exportAccountData(@AuthenticationPrincipal User user) {
         if (user == null) {
             return ResponseEntity.status(401).build();
@@ -72,6 +73,8 @@ public class UserController {
             profile.put("email",         user.getEmail());
             profile.put("role",          user.getRole());
             profile.put("premium",       user.isPremium());
+            profile.put("premiumExpiresAt",
+                    user.getPremiumExpiresAt() != null ? user.getPremiumExpiresAt().toString() : null);
             profile.put("emailVerified", user.isEmailVerified());
             profile.put("referralCode",  user.getReferralCode());
             profile.put("createdAt",     user.getCreatedAt() != null ? user.getCreatedAt().toString() : null);
@@ -92,7 +95,14 @@ public class UserController {
                         rm.put("skills",        r.getSkills());
                         rm.put("projects",      r.getProjects());
                         rm.put("certifications", r.getCertifications());
+                        rm.put("achievements",  r.getAchievements());
+                        rm.put("languages",     r.getLanguages());
                         rm.put("customSections", r.getCustomSections());
+                        rm.put("sectionsConfig", r.getSectionsConfig());
+                        rm.put("layoutScale",   r.getLayoutScale());
+                        // RESUME TYPOGRAPHY (resume-only) — part of the user's data.
+                        rm.put("fontFamily",    r.getFontFamily());
+                        rm.put("fontSize",      r.getFontSize());
                         rm.put("createdAt",  r.getCreatedAt() != null ? r.getCreatedAt().toString() : null);
                         rm.put("updatedAt",  r.getUpdatedAt() != null ? r.getUpdatedAt().toString() : null);
                         return rm;
@@ -125,6 +135,81 @@ public class UserController {
                             "exportFormat", e.getExportFormat(),
                             "createdAt",    e.getCreatedAt() != null ? e.getCreatedAt().toString() : ""
                     ))
+                    .collect(Collectors.toList()));
+
+            // Referral history (as inviter) and the invitation that brought
+            // this user in (as invitee), plus any rewards granted. Previously
+            // omitted entirely from the GDPR export.
+            data.put("referralHistory", referralHistoryRepository
+                    .findByReferrerUserOrderByCreatedAtDesc(user)
+                    .stream()
+                    .map(rh -> {
+                        Map<String, Object> m = new LinkedHashMap<>();
+                        m.put("id",               rh.getId());
+                        m.put("referredUserEmail", rh.getReferredUser() != null ? rh.getReferredUser().getEmail() : null);
+                        m.put("status",          rh.getStatus() != null ? rh.getStatus().name() : null);
+                        m.put("emailVerified",   rh.isEmailVerified());
+                        m.put("resumeCreated",   rh.isResumeCreated());
+                        m.put("createdAt",       rh.getCreatedAt() != null ? rh.getCreatedAt().toString() : null);
+                        m.put("qualifiedAt",     rh.getQualifiedAt() != null ? rh.getQualifiedAt().toString() : null);
+                        return m;
+                    })
+                    .collect(Collectors.toList()));
+
+            data.put("referredBy", referralHistoryRepository.findByReferredUser(user)
+                    .map(rh -> {
+                        Map<String, Object> m = new LinkedHashMap<>();
+                        m.put("id",             rh.getId());
+                        m.put("referrerEmail", rh.getReferrerUser() != null ? rh.getReferrerUser().getEmail() : null);
+                        m.put("status",        rh.getStatus() != null ? rh.getStatus().name() : null);
+                        m.put("createdAt",     rh.getCreatedAt() != null ? rh.getCreatedAt().toString() : null);
+                        m.put("qualifiedAt",   rh.getQualifiedAt() != null ? rh.getQualifiedAt().toString() : null);
+                        return m;
+                    })
+                    .orElse(null));
+
+            data.put("referralRewards", referralRewardRepository
+                    .findByUserOrderByGrantedAtDesc(user)
+                    .stream()
+                    .map(rw -> {
+                        Map<String, Object> m = new LinkedHashMap<>();
+                        m.put("id",             rw.getId());
+                        m.put("rewardType",     rw.getRewardType() != null ? rw.getRewardType().name() : null);
+                        m.put("description",    rw.getDescription());
+                        m.put("milestoneCount", rw.getMilestoneCount());
+                        m.put("grantedAt",      rw.getGrantedAt() != null ? rw.getGrantedAt().toString() : null);
+                        m.put("expiresAt",      rw.getExpiresAt() != null ? rw.getExpiresAt().toString() : null);
+                        return m;
+                    })
+                    .collect(Collectors.toList()));
+
+            // AI usage and ad-flow logs are personal data too, and were also
+            // missing from the account export.
+            data.put("aiUsageLogs", aiUsageLogRepository
+                    .findByUserIdOrderByCreatedAtDesc(user.getId())
+                    .stream()
+                    .map(l -> {
+                        Map<String, Object> m = new LinkedHashMap<>();
+                        m.put("id",           l.getId());
+                        m.put("feature",      l.getFeature());
+                        m.put("inputTokens",  l.getInputTokens());
+                        m.put("outputTokens", l.getOutputTokens());
+                        m.put("createdAt",    l.getCreatedAt() != null ? l.getCreatedAt().toString() : null);
+                        return m;
+                    })
+                    .collect(Collectors.toList()));
+
+            data.put("adFlowLogs", adFlowLogRepository
+                    .findByUserIdOrderByCreatedAtDesc(user.getId())
+                    .stream()
+                    .map(l -> {
+                        Map<String, Object> m = new LinkedHashMap<>();
+                        m.put("id",        l.getId());
+                        m.put("adType",    l.getAdType());
+                        m.put("status",    l.getStatus());
+                        m.put("createdAt", l.getCreatedAt() != null ? l.getCreatedAt().toString() : null);
+                        return m;
+                    })
                     .collect(Collectors.toList()));
 
             byte[] json = objectMapper

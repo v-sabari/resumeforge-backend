@@ -105,6 +105,19 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * AI-01 FIX: Premium-only feature used by a free account. Returns 403 with
+     * a machine-readable PREMIUM_REQUIRED code so the frontend can open the
+     * upgrade modal. Deliberately NOT 401 (which the axios interceptor treats
+     * as an expired session and logs the user out).
+     */
+    @ExceptionHandler(PremiumRequiredException.class)
+    public ResponseEntity<ApiResponse> handlePremiumRequired(PremiumRequiredException ex) {
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
+                .body(ApiResponse.error(ex.getMessage(), "PREMIUM_REQUIRED"));
+    }
+
+    /**
      * AI-01 FIX (unchanged): Handle typed AI exceptions.
      */
     @ExceptionHandler(AiException.class)
@@ -115,6 +128,7 @@ public class GlobalExceptionHandler {
             case OPENROUTER_RATE_LIMIT     -> HttpStatus.TOO_MANY_REQUESTS;
             case OPENROUTER_UNAVAILABLE    -> HttpStatus.SERVICE_UNAVAILABLE;
             case OPENROUTER_EMPTY_RESPONSE -> HttpStatus.BAD_GATEWAY;
+            case AI_NOT_CONFIGURED         -> HttpStatus.SERVICE_UNAVAILABLE;
             case AI_SERVICE_ERROR          -> HttpStatus.INTERNAL_SERVER_ERROR;
         };
         return ResponseEntity

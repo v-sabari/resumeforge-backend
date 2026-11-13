@@ -96,7 +96,12 @@ public class AuthController {
      * fails, we simply continue with the cookie already cleared.
      */
     private void revokeAllUserSessions(HttpServletRequest request) {
-        String token = resolveCookieToken(request);
+        // AUTH-TOKEN FIX: accept the token from the httpOnly cookie (browser
+        // flow) OR from the Authorization: Bearer header (API/mobile clients
+        // and any caller that sends the JWT explicitly). Previously only the
+        // cookie was read, so header-authenticated logouts cleared nothing and
+        // the presented JWT kept working until it expired.
+        String token = resolveRequestToken(request);
         if (token == null) return;
         try {
             String email = jwtUtil.extractEmail(token);
@@ -108,6 +113,23 @@ public class AuthController {
         } catch (Exception e) {
             log.warn("Logout session revocation skipped: {}", e.getMessage());
         }
+    }
+
+    /**
+     * Resolves the caller's JWT from either the auth cookie or a Bearer
+     * Authorization header, preferring the cookie (the browser's canonical
+     * credential) when both are present.
+     */
+    private String resolveRequestToken(HttpServletRequest request) {
+        String cookieToken = resolveCookieToken(request);
+        if (cookieToken != null) return cookieToken;
+
+        String header = request.getHeader(HttpHeaders.AUTHORIZATION);
+        if (header != null && header.regionMatches(true, 0, "Bearer ", 0, 7)) {
+            String bearer = header.substring(7).trim();
+            if (!bearer.isEmpty()) return bearer;
+        }
+        return null;
     }
 
     private String resolveCookieToken(HttpServletRequest request) {

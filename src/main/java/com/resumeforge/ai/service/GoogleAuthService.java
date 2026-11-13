@@ -6,6 +6,8 @@ import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
 import com.resumeforge.ai.exception.UnauthorizedException;
 import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -28,6 +30,8 @@ import java.util.List;
 @Service
 public class GoogleAuthService {
 
+    private static final Logger log = LoggerFactory.getLogger(GoogleAuthService.class);
+
     @Value("${app.google.client-id}")
     private String googleClientId;
 
@@ -35,12 +39,14 @@ public class GoogleAuthService {
 
     @PostConstruct
     void init() {
-        // SEC FIX: fail fast at startup when GOOGLE_CLIENT_ID is missing,
-        // rather than rejecting every Google login at runtime with one blob of
-        // errors. Render supplies this via its env vars.
+        // AI-01 FIX (degraded mode): a missing GOOGLE_CLIENT_ID must NOT abort
+        // application startup — email/password auth, resumes, exports and
+        // every other feature work without Google Sign-In. Log loudly and let
+        // verify() reject Google credentials with a clear message.
         if (googleClientId == null || googleClientId.isBlank()) {
-            throw new IllegalStateException(
-                    "app.google.client-id / GOOGLE_CLIENT_ID is not set. Google Sign-In will not work.");
+            log.warn("[GoogleAuthService] GOOGLE_CLIENT_ID is not set — Google Sign-In is DISABLED. " +
+                    "Email/password login is unaffected. Set GOOGLE_CLIENT_ID to enable it.");
+            return;
         }
 
         List<String> issuers = Arrays.asList("accounts.google.com", "https://accounts.google.com");
@@ -62,6 +68,10 @@ public class GoogleAuthService {
     public GoogleIdToken.Payload verify(String credential) {
         if (credential == null || credential.isBlank()) {
             throw new UnauthorizedException("Missing Google credential");
+        }
+        if (verifier == null) {
+            throw new UnauthorizedException(
+                    "Google Sign-In is not configured on this server. Use email/password login.");
         }
         try {
             GoogleIdToken idToken = verifier.verify(credential);

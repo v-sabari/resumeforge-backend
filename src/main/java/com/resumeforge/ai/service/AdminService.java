@@ -129,11 +129,10 @@ public class AdminService {
 
     @Transactional
     public AdminUserResponse togglePremium(Long userId, TogglePremiumRequest request) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-
-        // Since the user's premium status is changing, re-fetch the managed
-        // entity so the returned AdminUserResponse reflects the persisted state.
+        // Single lookup: within this transaction the entity is already managed,
+        // so saving and re-reading the SAME instance reflects the persisted
+        // state. The previous duplicate findById() was redundant and could
+        // return a stale second instance from the persistence context.
         User managed = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 

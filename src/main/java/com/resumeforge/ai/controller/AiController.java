@@ -68,6 +68,7 @@ public class AiController {
                 case OPENROUTER_RATE_LIMIT     -> HttpStatus.TOO_MANY_REQUESTS;
                 case OPENROUTER_UNAVAILABLE    -> HttpStatus.SERVICE_UNAVAILABLE;
                 case OPENROUTER_EMPTY_RESPONSE -> HttpStatus.BAD_GATEWAY;
+                case AI_NOT_CONFIGURED         -> HttpStatus.SERVICE_UNAVAILABLE;
                 case AI_SERVICE_ERROR          -> HttpStatus.INTERNAL_SERVER_ERROR;
             };
             return ResponseEntity

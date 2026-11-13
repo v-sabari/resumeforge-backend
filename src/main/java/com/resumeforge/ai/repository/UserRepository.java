@@ -1,9 +1,11 @@
 package com.resumeforge.ai.repository;
 
 import com.resumeforge.ai.entity.User;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -18,6 +20,17 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByPasswordResetToken(String token);
     Optional<User> findByReferralCode(String referralCode);
     Optional<User> findByGoogleId(String googleId);
+
+    /**
+     * EXPORT QUOTA FIX: pessimistic row lock used to serialise the
+     * count-then-insert sequence in {@code ExportQuotaService}. Two concurrent
+     * downloads for the same user could otherwise both read the same
+     * "exports used" count and both insert, letting a free user exceed the
+     * daily cap. Locking the owning user row makes the check + insert atomic.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT u FROM User u WHERE u.id = :id")
+    Optional<User> findByIdForUpdate(@Param("id") Long id);
 
     boolean existsByEmail(String email);
 

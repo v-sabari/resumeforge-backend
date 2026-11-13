@@ -2,6 +2,7 @@ package com.resumeforge.ai.controller;   // ← FIXED: was com.example.controlle
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -35,6 +36,13 @@ public class ScreenshotController {
 
     private final RestTemplate restTemplate;
 
+    // Configured in application.properties (SCREENSHOT_SERVICE_URL env var) so
+    // the headless-browser service can be moved without editing Java code.
+    // Must be the complete endpoint; the target url is appended as a query
+    // parameter below.
+    @Value("${app.screenshot.service-url:https://puppeteer-service.onrender.com/screenshot}")
+    private String screenshotServiceUrl;
+
     public ScreenshotController() {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(TIMEOUT_MS);
@@ -55,8 +63,12 @@ public class ScreenshotController {
         try {
             // SEC FIX: URL-encode the target so a malicious value cannot alter the
             // query string of the puppeteer service URL itself.
-            String puppeteerUrl = "https://puppeteer-service.onrender.com/screenshot?url="
-                    + URLEncoder.encode(validatedUrl, StandardCharsets.UTF_8);
+            String base = screenshotServiceUrl == null || screenshotServiceUrl.isBlank()
+                    ? "https://puppeteer-service.onrender.com/screenshot"
+                    : screenshotServiceUrl.trim();
+            String puppeteerUrl = base
+                    + (base.contains("?") ? "&" : "?")
+                    + "url=" + URLEncoder.encode(validatedUrl, StandardCharsets.UTF_8);
             byte[] screenshot = restTemplate.getForObject(puppeteerUrl, byte[].class);
             if (screenshot == null || screenshot.length == 0) {
                 log.warn("Puppeteer returned empty response");

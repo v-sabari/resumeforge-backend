@@ -14,6 +14,9 @@ public interface AiUsageLogRepository extends JpaRepository<AiUsageLog, Long> {
 
     long countByUserId(Long userId);
 
+    // DATA-01 FIX: GDPR export needs to include the user's AI usage history.
+    java.util.List<AiUsageLog> findByUserIdOrderByCreatedAtDesc(Long userId);
+
     long countByUserIdAndCreatedAtAfter(Long userId, LocalDateTime after);
 
     // CHAT-01: per-user per-feature daily count — used for the premium chat

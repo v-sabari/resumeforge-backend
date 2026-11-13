@@ -49,4 +49,18 @@ public class ResumeRequest {
     @DecimalMin(value = "0.5", message = "layoutScale must be at least 0.5")
     @DecimalMax(value = "1.35", message = "layoutScale must not exceed 1.35")
     private Double layoutScale;
+
+    // RESUME TYPOGRAPHY (resume-only): allow-listed family identifier and
+    // bounded body size. Keep these lists/bounds in sync with
+    // ResumeService.ALLOWED_FONT_FAMILIES / DEFAULT_FONT_SIZE and with
+    // frontend/src/utils/resumeTypography.js.
+    @Pattern(
+            regexp = "^(template|times|georgia|garamond|arial|helvetica|calibri|cambria|courier)$",
+            message = "fontFamily must be one of: template, times, georgia, garamond, arial, helvetica, calibri, cambria, courier"
+    )
+    private String fontFamily;
+
+    @DecimalMin(value = "8.0", message = "fontSize must be at least 8.0")
+    @DecimalMax(value = "13.0", message = "fontSize must not exceed 13.0")
+    private Double fontSize;
 }

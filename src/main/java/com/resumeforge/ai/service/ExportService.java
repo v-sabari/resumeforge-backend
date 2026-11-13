@@ -7,7 +7,6 @@ import com.resumeforge.ai.entity.ExportHistory;
 import com.resumeforge.ai.entity.Resume;
 import com.resumeforge.ai.entity.User;
 import com.resumeforge.ai.exception.ResourceNotFoundException;
-import com.resumeforge.ai.exception.RateLimitException;
 import com.resumeforge.ai.repository.ExportHistoryRepository;
 import com.resumeforge.ai.repository.ResumeRepository;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -36,7 +35,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -56,8 +54,6 @@ import java.util.stream.StreamSupport;
 public class ExportService {
 
     /* ── PDF layout constants ─────────────────────────────────────── */
-    // SEC/BUS FIX: free-tier daily export limit (3 per rolling 24h).
-    private static final int FREE_LIMIT     = 3;
     private static final float MARGIN       = 50f;
     private static final float PAGE_H       = PDRectangle.A4.getHeight();
     private static final float PAGE_W       = PDRectangle.A4.getWidth();
@@ -75,6 +71,10 @@ public class ExportService {
 
     @Autowired private ResumeRepository        resumeRepository;
     @Autowired private ExportHistoryRepository exportHistoryRepository;
+    // EXPORT QUOTA FIX: quota lives in its own transactional bean so the
+    // count-then-insert can actually be atomic (a private self-invocation
+    // bypasses Spring's proxy and its @Transactional annotation).
+    @Autowired private ExportQuotaService      exportQuotaService;
 
     private final ObjectMapper om = new ObjectMapper();
 
@@ -113,62 +113,20 @@ public class ExportService {
        ================================================================ */
 
     public ExportStatusResponse checkExportAccess(User user) {
-        long used  = countRecent(user);
-        boolean ok = user.isPremium() || used < 3;
-        long limit = user.isPremium() ? 999 : 3;
-        return ExportStatusResponse.builder()
-            .canExport(ok)
-            .reason(ok ? "OK" : "Daily limit reached. Upgrade to premium for unlimited exports.")
-            .exportsToday(used).exportLimit(limit)
-            .remainingFreeExports(user.isPremium() ? 999 : Math.max(0, limit - used))
-            .build();
-    }
-
-    @Transactional
-    public ExportStatusResponse checkAndRecordExport(User user, Long resumeId, String format) {
-        long used  = countRecent(user);
-        boolean ok = user.isPremium() || used < 3;
-        long limit = user.isPremium() ? 999 : 3;
-        if (!ok) return ExportStatusResponse.builder().canExport(false)
-            .reason("Daily limit reached. Upgrade to premium for unlimited exports.")
-            .exportsToday(used).exportLimit(limit).remainingFreeExports(0).build();
-        Resume r = load(user, resumeId);
-        exportHistoryRepository.save(ExportHistory.builder()
-            .userId(user.getId()).resumeId(r.getId()).exportFormat(format.toUpperCase()).build());
-        return ExportStatusResponse.builder().canExport(true).reason("OK")
-            .exportsToday(used + 1).exportLimit(limit)
-            .remainingFreeExports(user.isPremium() ? 999 : Math.max(0, limit - used - 1))
-            .build();
+        // EXPORT QUOTA FIX: single source of truth, no duplicated 3/999 literals.
+        return exportQuotaService.status(user);
     }
 
     // SEC/BUS FIX (EXPORT-02): a free user could bypass the free daily export
     // quota entirely by calling the download endpoints directly and never
-    // calling /api/export/record — the old download "backstop" only blocked
-    // when MORE than FREE_LIMIT rows had already been recorded, which never
-    // happened if /record was never called, so an unlimited number of files
-    // could be downloaded. The download endpoints (exportToPdf/Docx/Txt) are
-    // now the single accounting point: they check the quota and record the
-    // export atomically (see checkAndRecordDownload). This method is retained
-    // only for backward compatibility and is now a pure, side-effect-free
-    // check, so the frontend's existing /record call (immediately followed by
-    // a download) cannot double-count.
+    // calling /api/export/record. The download endpoints (exportToPdf/Docx/Txt)
+    // are now the single accounting point: they pre-check the quota and record
+    // the export only after the file bytes were generated successfully. This
+    // method is retained only for backward compatibility and is now a pure,
+    // side-effect-free check, so the frontend's existing /record call
+    // (immediately followed by a download) cannot double-count.
     public ExportStatusResponse recordExport(User user, ExportRecordRequest request) {
-        return checkExportAccess(user);
-    }
-
-    /**
-     * SEC/BUS FIX (EXPORT-02): the download paths are the effective accounting
-     * point for the free daily export quota. This checks the quota and records
-     * the export atomically, then throws 429 when the free limit is reached so
-     * a free user cannot obtain an unlimited number of files by calling the
-     * download endpoint directly without first recording. Premium users are
-     * exempt (checkAndRecordExport returns canExport=true for them).
-     */
-    private void checkAndRecordDownload(User user, Long resumeId, String format) {
-        if (!checkAndRecordExport(user, resumeId, format).isCanExport()) {
-            throw new RateLimitException(
-                "Free export limit reached (3 per day). Upgrade to premium for unlimited exports.");
-        }
+        return exportQuotaService.status(user);
     }
 
     public List<ExportHistoryResponse> getExportHistory(User user) {
@@ -186,10 +144,15 @@ public class ExportService {
        ================================================================ */
 
     public byte[] exportToPdf(User user, Long resumeId) {
-        checkAndRecordDownload(user, resumeId, "PDF");
+        // Fail fast (cheaply) before paying for a headless-Chromium render. The
+        // authoritative quota check still happens under the row lock in
+        // recordExport(), and it only runs AFTER the PDF bytes exist — so a
+        // failed render never burns one of the user's daily exports.
+        exportQuotaService.assertWithinQuota(user);
         Resume resume = load(user, resumeId);
         Map<String, Object> payload = buildRenderPayload(resume);
 
+        byte[] pdf;
         try {
             String body = om.writeValueAsString(payload);
             // NOTE: renderServiceUrl now points at the FULL endpoint path
@@ -208,7 +171,7 @@ public class ExportService {
                 throw new RuntimeException("Render service returned HTTP " + resp.statusCode()
                     + ": " + new String(resp.body(), StandardCharsets.UTF_8));
             }
-            return resp.body();
+            pdf = resp.body();
         } catch (ResourceNotFoundException e) {
             throw e;
         } catch (Exception e) {
@@ -218,6 +181,9 @@ public class ExportService {
             // render-service/README.md for operational runbook.
             throw new RuntimeException("Failed to generate PDF via render service: " + e.getMessage(), e);
         }
+
+        exportQuotaService.recordExport(user, resume.getId(), "PDF");
+        return pdf;
     }
 
     /**
@@ -255,6 +221,12 @@ public class ExportService {
         // confirmed in the live preview — never recomputed here, never
         // silently dropped. See Resume.java / renderPdfHandler.jsx.
         flat.put("layoutScale",       resume.getLayoutScale() == null ? 1.0 : resume.getLayoutScale());
+        // RESUME TYPOGRAPHY (resume-only): family id + body size in px. The
+        // render handler applies these inside a scoped .resume-typography
+        // wrapper, exactly like the live preview, so export and preview can
+        // never disagree. Never used by the app's own UI.
+        flat.put("fontFamily",        resume.getFontFamily() == null ? "template" : resume.getFontFamily());
+        flat.put("fontSize",          resume.getFontSize() == null ? 10.5 : resume.getFontSize());
 
         Map<String, Object> req = new LinkedHashMap<>();
         req.put("resume", flat);
@@ -474,8 +446,10 @@ public class ExportService {
        ================================================================ */
 
     public byte[] exportToDocx(User user, Long resumeId) {
-        checkAndRecordDownload(user, resumeId, "DOCX");
+        // Quota is recorded only after a successful render (see recordExport).
+        exportQuotaService.assertWithinQuota(user);
         Resume resume = load(user, resumeId);
+        byte[] docx;
         try (XWPFDocument doc = new XWPFDocument()) {
             CTSectPr sp = doc.getDocument().getBody().addNewSectPr();
             // Explicit page size (twips) so right-aligned tab stops land exactly on the
@@ -534,14 +508,23 @@ public class ExportService {
                 }
             }
 
+            // RESUME TYPOGRAPHY (resume-only): apply the user's chosen family
+            // and body size to every DOCX run, so the Word export reflects the
+            // same two controls as the preview/PDF. Word needs real font names
+            // (not CSS stacks) and point sizes (not zoom), so this is mapped
+            // here rather than reusing the frontend module.
+            applyDocxTypography(doc, resume);
+
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             doc.write(out);
-            return out.toByteArray();
+            docx = out.toByteArray();
         } catch (ResourceNotFoundException e) {
             throw e;
         } catch (Exception e) {
             throw new RuntimeException("Failed to generate DOCX: " + e.getMessage(), e);
         }
+        exportQuotaService.recordExport(user, resume.getId(), "DOCX");
+        return docx;
     }
 
     /* ── DOCX section renderers ─────────────────────────────────── */
@@ -617,6 +600,40 @@ public class ExportService {
     private void docxCustomSection(XWPFDocument doc, String label, JsonNode content) {
         if (content==null||content.isMissingNode()) return;
         String mode=content.path("mode").asString("text");
+        if ("grid".equals(mode)) {
+            JsonNode columns=content.path("columns");
+            if (!columns.isArray()) return;
+            List<String> lines=new ArrayList<>();
+            for (JsonNode col : columns) {
+                String colLabel=t(col,"label");
+                List<String> items=new ArrayList<>();
+                for (JsonNode it : col.path("items")) { String v=it.asString("").trim(); if(!v.isBlank()) items.add(v); }
+                if (colLabel.isBlank()&&items.isEmpty()) continue;
+                lines.add(colLabel.isBlank() ? join(items,", ") : colLabel+": "+join(items,", "));
+            }
+            if (lines.isEmpty()) return;
+            dHeading(doc, label.toUpperCase());
+            lines.forEach(l -> dBody(doc, l));
+            return;
+        }
+        if ("entries".equals(mode)) {
+            JsonNode entries=content.path("entries");
+            if (!entries.isArray()) return;
+            List<JsonNode> rows=new ArrayList<>();
+            for (JsonNode en : entries) if (hasCustomEntryContent(en)) rows.add(en);
+            if (rows.isEmpty()) return;
+            dHeading(doc, label.toUpperCase());
+            for (JsonNode en : rows) {
+                String title=t(en,"title"), date=t(en,"date");
+                if (title.isBlank()&&!date.isBlank()) dMeta(doc, date);
+                else if (!title.isBlank()) dTwoCol(doc, title, date);
+                String meta=join(parts(t(en,"subtitle"),t(en,"location")),"  ·  ");
+                if (!meta.isBlank()) dMeta(doc, meta);
+                for (JsonNode b : en.path("bullets")) { String bl=b.asString(""); if(!bl.isBlank()) dBullet(doc,bl); }
+                dSpacer(doc);
+            }
+            return;
+        }
         if ("bullets".equals(mode)) {
             JsonNode items=content.path("items");
             if (!items.isArray()) return;
@@ -633,12 +650,22 @@ public class ExportService {
         }
     }
 
+    /** True when a custom "entries" row has any field worth rendering. */
+    private boolean hasCustomEntryContent(JsonNode entry) {
+        if (entry==null||entry.isMissingNode()) return false;
+        if (!t(entry,"title").isBlank()||!t(entry,"subtitle").isBlank()
+            ||!t(entry,"date").isBlank()||!t(entry,"location").isBlank()) return true;
+        for (JsonNode b : entry.path("bullets")) if (!b.asString("").isBlank()) return true;
+        return false;
+    }
+
     /* ================================================================
        TXT EXPORT
        ================================================================ */
 
     public byte[] exportToTxt(User user, Long resumeId) {
-        checkAndRecordDownload(user, resumeId, "TXT");
+        // Quota is recorded only after a successful render (see recordExport).
+        exportQuotaService.assertWithinQuota(user);
         Resume resume = load(user, resumeId);
         StringBuilder t = new StringBuilder();
 
@@ -685,7 +712,9 @@ public class ExportService {
             }
         }
 
-        return t.toString().getBytes(StandardCharsets.UTF_8);
+        byte[] txt = t.toString().getBytes(StandardCharsets.UTF_8);
+        exportQuotaService.recordExport(user, resume.getId(), "TXT");
+        return txt;
     }
 
     /* ── TXT section renderers ──────────────────────────────────── */
@@ -757,6 +786,43 @@ public class ExportService {
     private void txtCustomSection(StringBuilder t, String label, JsonNode content) {
         if (content==null||content.isMissingNode()) return;
         String mode=content.path("mode").asString("text");
+        if ("grid".equals(mode)) {
+            JsonNode columns=content.path("columns"); if(!columns.isArray()) return;
+            List<String> lines=new ArrayList<>();
+            for (JsonNode col : columns) {
+                String colLabel=this.t(col,"label");
+                List<String> items=new ArrayList<>();
+                for (JsonNode it : col.path("items")) { String v=it.asString("").trim(); if(!v.isBlank()) items.add(v); }
+                if (colLabel.isBlank()&&items.isEmpty()) continue;
+                lines.add(colLabel.isBlank() ? join(items,", ") : colLabel+": "+join(items,", "));
+            }
+            if (lines.isEmpty()) return;
+            txtHeading(t, label.toUpperCase());
+            lines.forEach(l -> t.append(l).append("\n"));
+            t.append("\n");
+            return;
+        }
+        if ("entries".equals(mode)) {
+            JsonNode entries=content.path("entries"); if(!entries.isArray()) return;
+            List<JsonNode> rows=new ArrayList<>();
+            for (JsonNode en : entries) if (hasCustomEntryContent(en)) rows.add(en);
+            if (rows.isEmpty()) return;
+            txtHeading(t, label.toUpperCase());
+            for (JsonNode en : rows) {
+                String title=this.t(en,"title"), date=this.t(en,"date");
+                if (title.isBlank()&&!date.isBlank()) t.append(date).append("\n");
+                else if (!title.isBlank()) {
+                    t.append(title);
+                    if (!date.isBlank()) t.append("  (").append(date).append(")");
+                    t.append("\n");
+                }
+                String meta=join(parts(this.t(en,"subtitle"),this.t(en,"location")),"  ·  ");
+                if (!meta.isBlank()) t.append(meta).append("\n");
+                for (JsonNode b : en.path("bullets")) { String bl=b.asString(""); if(!bl.isBlank()) t.append("  - ").append(bl).append("\n"); }
+                t.append("\n");
+            }
+            return;
+        }
         if ("bullets".equals(mode)) {
             JsonNode items=content.path("items"); if(!items.isArray()) return;
             List<String> list=new ArrayList<>();
@@ -826,10 +892,11 @@ public class ExportService {
     }
 
     private String certLine(JsonNode c) {
-        String name=t(c,"name"),issuer=t(c,"issuer"),year=t(c,"year");
+        String name=t(c,"name"),issuer=t(c,"issuer"),year=t(c,"year"),url=t(c,"credentialUrl");
         StringBuilder sb=new StringBuilder(name);
         if(!issuer.isBlank()) sb.append(" — ").append(issuer);
         if(!year.isBlank()) sb.append(" (").append(year).append(")");
+        if(!url.isBlank()) sb.append(" — ").append(url);
         return sb.toString();
     }
 
@@ -976,6 +1043,47 @@ public class ExportService {
     private void dBold(XWPFDocument d, String t)    { if(t==null||t.isBlank()) return; XWPFParagraph p=d.createParagraph(); p.setSpacingAfter(20); XWPFRun r=p.createRun(); r.setText(t); r.setBold(true); r.setFontSize(11); }
     private void dBody(XWPFDocument d, String t)    { if(t==null||t.isBlank()) return; XWPFParagraph p=d.createParagraph(); p.setSpacingAfter(60); XWPFRun r=p.createRun(); r.setText(t); r.setFontSize(10); }
     private void dBullet(XWPFDocument d, String t)  { if(t==null||t.isBlank()) return; XWPFParagraph p=d.createParagraph(); p.setIndentationLeft(260); p.setSpacingAfter(20); XWPFRun r=p.createRun(); r.setText("•  "+t); r.setFontSize(10); }
+
+    /**
+     * RESUME TYPOGRAPHY (resume-only): post-processes every generated run so
+     * the DOCX export honours the same family/size the user chose in the
+     * Templates panel. Runs are created with fixed sizes throughout this
+     * class, so one uniform pass keeps every heading/body/bullet consistent
+     * and avoids threading a style object through ~30 call sites.
+     */
+    private void applyDocxTypography(XWPFDocument doc, Resume resume) {
+        String wordFont = wordFontFamily(resume.getFontFamily());
+        double scale = docxSizeScale(resume.getFontSize());
+        for (XWPFParagraph p : doc.getParagraphs()) {
+            for (XWPFRun r : p.getRuns()) {
+                if (wordFont != null) r.setFontFamily(wordFont);
+                int size = r.getFontSize();
+                if (size > 0) r.setFontSize(Math.max(6, (int) Math.round(size * scale)));
+            }
+        }
+    }
+
+    /** Maps an allow-listed font id to a Word font name; null = template default. */
+    private String wordFontFamily(String family) {
+        if (family == null) return null;
+        return switch (family) {
+            case "times"     -> "Times New Roman";
+            case "georgia"   -> "Georgia";
+            case "garamond"  -> "Garamond";
+            case "arial"     -> "Arial";
+            case "helvetica" -> "Helvetica";
+            case "calibri"   -> "Calibri";
+            case "cambria"   -> "Cambria";
+            case "courier"   -> "Courier New";
+            default          -> null; // "template" keeps the existing DOCX look
+        };
+    }
+
+    /** Body-size multiplier; 10.5 is the baseline the DOCX styles were built at. */
+    private double docxSizeScale(Double fontSize) {
+        if (fontSize == null || fontSize.isNaN() || fontSize < 8.0 || fontSize > 13.0) return 1.0;
+        return fontSize / FONT_SIZE;
+    }
     /** "Tech Stack: A, B" — label added once, even if the user already typed it. */
     private String techStackLine(String tech) {
         String v = tech == null ? "" : tech.trim().replaceFirst("(?i)^tech(nology)?\\s*stack\\s*:\\s*", "");
@@ -1045,10 +1153,6 @@ public class ExportService {
     private Resume load(User user, Long id) {
         return resumeRepository.findByIdAndUserId(id, user.getId())
             .orElseThrow(() -> new ResourceNotFoundException("Resume not found"));
-    }
-
-    private long countRecent(User user) {
-        return exportHistoryRepository.countRecentExports(user.getId(), LocalDateTime.now().minusDays(1));
     }
 
     private String sanitizeFilename(String title) {

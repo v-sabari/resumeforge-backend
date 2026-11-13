@@ -8,8 +8,8 @@ import com.resumeforge.ai.entity.AiUsageLog;
 import com.resumeforge.ai.entity.User;
 import com.resumeforge.ai.exception.AiException;
 import com.resumeforge.ai.exception.BadRequestException;
+import com.resumeforge.ai.exception.PremiumRequiredException;
 import com.resumeforge.ai.exception.RateLimitException;
-import com.resumeforge.ai.exception.UnauthorizedException;
 import com.resumeforge.ai.repository.AiUsageLogRepository;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
@@ -113,19 +113,31 @@ public class AiService {
     private RetryTemplate retryTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    /**
+     * AI-01 FIX: whether an OpenRouter key was present at startup. When false,
+     * AI calls fail fast with a typed AI_NOT_CONFIGURED (503) instead of
+     * sending a request with a blank bearer token (which would surface as a
+     * confusing upstream 401).
+     */
+    private volatile boolean configured = false;
+
     // ── Startup ───────────────────────────────────────────────────────────────
 
     @PostConstruct
     public void init() {
-        if (openRouterApiKey == null || openRouterApiKey.isBlank()) {
-            throw new IllegalStateException(
-                    "[AiService] OPENROUTER_API_KEY is not set or blank. " +
-                            "All AI endpoints will return errors. " +
-                            "Fix: Render dashboard → your service → Environment → " +
-                            "Add environment variable: OPENROUTER_API_KEY = sk-or-v1-..."
-            );
-        }
-        if (openRouterApiKey.length() < 20) {
+        // AI-01 FIX (degraded mode): a missing key must NOT abort application
+        // startup. Every other feature (auth, resumes, exports, payments…)
+        // works without AI, and AiHealthController already documents this as a
+        // valid "degraded, HTTP 200" state. Instead of throwing, we log a loud
+        // warning and let AI endpoints fail per-request with a clear 503
+        // AI_NOT_CONFIGURED (see ensureConfigured()).
+        boolean keyPresent = openRouterApiKey != null && !openRouterApiKey.isBlank();
+        this.configured = keyPresent;
+        if (!keyPresent) {
+            log.warn("[AiService] OPENROUTER_API_KEY is not set or blank — AI is DEGRADED. " +
+                    "All AI endpoints will return 503 AI_NOT_CONFIGURED. " +
+                    "Fix: set OPENROUTER_API_KEY in the deployment environment and restart.");
+        } else if (openRouterApiKey.length() < 20) {
             log.warn("[AiService] OPENROUTER_API_KEY is unusually short ({} chars, tail='…{}').",
                     openRouterApiKey.length(), maskKey(openRouterApiKey));
         }
@@ -340,8 +352,20 @@ public class AiService {
 
     private void requirePremium(User user) {
         if (user == null || !user.isPremium()) {
-            throw new UnauthorizedException(
+            // AI-01 FIX: 403 PREMIUM_REQUIRED (not 401) so the frontend shows
+            // the upgrade prompt instead of logging the user out.
+            throw new PremiumRequiredException(
                     "The AI Resume Builder is a Premium feature. Please upgrade to Premium to build your resume through AI conversation.");
+        }
+    }
+
+    /** AI-01 FIX: shared guard for the degraded (no-key) state. */
+    private void ensureConfigured() {
+        if (!configured || openRouterApiKey == null || openRouterApiKey.isBlank()) {
+            throw new AiException(
+                    AiException.ErrorCode.AI_NOT_CONFIGURED,
+                    "AI features are not configured on this server. " +
+                            "Set OPENROUTER_API_KEY and restart.");
         }
     }
 
@@ -436,6 +460,7 @@ public class AiService {
     private JsonNode doHttpCallWithMessages(User user, String feature,
                                             List<Map<String, Object>> history, String systemPrompt) {
 
+        ensureConfigured();
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setBearerAuth(openRouterApiKey);
@@ -605,6 +630,7 @@ public class AiService {
      */
     private JsonNode doHttpCall(User user, String feature, String prompt) {
 
+        ensureConfigured();
         // TOOLS-01: the public free tools call this with a null user; usage is
         // logged only when a real user is attached.
         String userIdForLog = user == null ? "anonymous" : String.valueOf(user.getId());

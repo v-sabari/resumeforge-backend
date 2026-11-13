@@ -42,6 +42,16 @@ public class ResumeService {
 
     public static final String DEFAULT_TEMPLATE = "modern";
 
+    // RESUME TYPOGRAPHY (resume-only): allow-listed family identifiers.
+    // The DB CHECK constraint in V27 enforces the same list; keep them in
+    // sync with ResumeRequest's @Pattern and frontend resumeTypography.js.
+    public static final Set<String> ALLOWED_FONT_FAMILIES = Set.of(
+            "template", "times", "georgia", "garamond", "arial",
+            "helvetica", "calibri", "cambria", "courier"
+    );
+    public static final String DEFAULT_FONT_FAMILY = "template";
+    public static final double DEFAULT_FONT_SIZE = 10.5;
+
     private static final int TITLE_MAX_LENGTH   = 500;
     private static final int SUMMARY_MAX_LENGTH = 10000;
 
@@ -79,6 +89,9 @@ public class ResumeService {
                 .sectionsConfig(sanitizeJsonb(request.getSectionsConfig()))
                 // COMPRESS FEATURE: density scale (defaults to full size)
                 .layoutScale(sanitizeLayoutScale(request.getLayoutScale()))
+                // RESUME TYPOGRAPHY (resume-only; defaults preserve old output)
+                .fontFamily(sanitizeFontFamily(request.getFontFamily()))
+                .fontSize(sanitizeFontSize(request.getFontSize()))
                 .build();
 
         resume = resumeRepository.save(resume);
@@ -128,6 +141,9 @@ public class ResumeService {
         resume.setSectionsConfig(sanitizeJsonb(request.getSectionsConfig()));
         // COMPRESS FEATURE: update density scale on every save
         resume.setLayoutScale(sanitizeLayoutScale(request.getLayoutScale()));
+        // RESUME TYPOGRAPHY (resume-only)
+        resume.setFontFamily(sanitizeFontFamily(request.getFontFamily()));
+        resume.setFontSize(sanitizeFontSize(request.getFontSize()));
 
         try {
             resume = resumeRepository.save(resume);
@@ -191,6 +207,8 @@ public class ResumeService {
             resume.setLanguages(sanitizeJsonb(sd.getLanguages()));
             resume.setSectionsConfig(sanitizeJsonb(sd.getSectionsConfig()));
             resume.setLayoutScale(sanitizeLayoutScale(sd.getLayoutScale()));
+            resume.setFontFamily(sanitizeFontFamily(sd.getFontFamily()));
+            resume.setFontSize(sanitizeFontSize(sd.getFontSize()));
             resume = resumeRepository.save(resume);
             createSnapshot(resume);
             return toResponse(resume);
@@ -251,6 +269,27 @@ public class ResumeService {
         return value;
     }
 
+    // RESUME TYPOGRAPHY (resume-only): independently re-validate so a
+    // directly-crafted request can never smuggle an unknown family id (raw
+    // CSS) or an unreadable/oversized body size past bean validation.
+    // Unknown/null family -> 'template' (the template's own stack); invalid
+    // size -> 10.5 (the size templates are designed around).
+    private String sanitizeFontFamily(String value) {
+        if (value == null || value.isBlank()) return DEFAULT_FONT_FAMILY;
+        String normalized = value.trim().toLowerCase();
+        return ALLOWED_FONT_FAMILIES.contains(normalized) ? normalized : DEFAULT_FONT_FAMILY;
+    }
+
+    private static final double FONT_SIZE_FLOOR = 8.0;
+    private static final double FONT_SIZE_CEILING = 13.0;
+    private Double sanitizeFontSize(Double value) {
+        if (value == null || value.isNaN() || value < FONT_SIZE_FLOOR || value > FONT_SIZE_CEILING) {
+            return DEFAULT_FONT_SIZE;
+        }
+        // One decimal is plenty and avoids float noise in persisted JSON.
+        return Math.round(value * 10.0) / 10.0;
+    }
+
     private String sanitizeJsonb(String value) {
         if (value == null) return null;
         String trimmed = value.trim();
@@ -281,6 +320,8 @@ public class ResumeService {
             sd.setLanguages(resume.getLanguages());
             sd.setSectionsConfig(resume.getSectionsConfig());
             sd.setLayoutScale(resume.getLayoutScale());
+            sd.setFontFamily(resume.getFontFamily());
+            sd.setFontSize(resume.getFontSize());
 
             snapshotRepository.save(
                     ResumeSnapshot.builder()
@@ -310,6 +351,8 @@ public class ResumeService {
                 .languages(resume.getLanguages())
                 .sectionsConfig(resume.getSectionsConfig())
                 .layoutScale(resume.getLayoutScale())
+                .fontFamily(resume.getFontFamily())
+                .fontSize(resume.getFontSize())
                 .createdAt(resume.getCreatedAt())
                 .updatedAt(resume.getUpdatedAt())
                 .build();

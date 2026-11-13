@@ -1,0 +1,340 @@
+{
+  "title": "QA Max Coverage Resume",
+  "template": "modern",
+  "fontFamily": "template",
+  "fontSize": 10.5,
+  "fullName": "Aarav Krishnan-Rao",
+  "professionalTitle": "Principal Platform Architect & Site Reliability Lead",
+  "email": "aarav.krishnan+resume-max-coverage@example.com",
+  "phone": "+91 98765 43210",
+  "location": "Chennai, Tamil Nadu, India",
+  "linkedin": "https://www.linkedin.com/in/aarav-krishnan-rao-9a8b7c6d5e",
+  "github": "https://github.com/aaravkrishnan-qa-max-coverage",
+  "portfolio": "https://aaravkrishnan.dev/portfolio/max-coverage-long-url-segment-for-wrapping",
+  "summary": "Principal platform architect with 14+ years designing resilient, observable, and cost-efficient distributed systems across fintech, healthcare, and logistics. Led multi-region Kubernetes migrations, cut p99 latency by 63%, and built platform teams that ship safely at scale. Comfortable spanning deep technical design, incident command, and executive communication; known for turning ambiguous reliability goals into measurable SLOs that engineering and product teams actually adopt. This deliberately long summary also exercises wrapping, special characters (& < > \" ' / \\ @ # %), accented text (José, naïve, façade, Zürich), CJK (東京), Arabic (مرحبا), and emoji (🚀 ✅ 📈) so every renderer must preserve Unicode without corruption.",
+  "skills": [
+    "Kubernetes & Helm",
+    "Terraform & OpenTofu",
+    "AWS / GCP / Azure",
+    "Go, Rust & Python",
+    "Distributed systems design",
+    "Observability (OpenTelemetry, Prometheus, Grafana)",
+    "PostgreSQL & Kafka",
+    "CI/CD (GitHub Actions, Argo CD)",
+    "Security & compliance (SOC 2, HIPAA)",
+    "Incident command & chaos engineering",
+    "Cost optimisation (FinOps)",
+    "Technical mentoring & platform strategy"
+  ],
+  "experience": [
+    {
+      "id": "exp-max-1",
+      "role": "Principal Platform Architect",
+      "company": "Northstar Financial Technologies",
+      "location": "Chennai, India (Hybrid)",
+      "employmentType": "Full-time",
+      "startDate": "Jan 2021",
+      "endDate": "Present",
+      "summary": "Own the reliability and platform strategy for a payments platform processing 4.2M transactions per day across three regions. This role summary is intentionally long (well over 150 characters) to prove that multi-line summaries wrap correctly, stay inside the content column, and never clip or overflow their container in preview or export.",
+      "bullets": [
+        "Designed and led a zero-downtime migration of 180 microservices from single-region ECS to multi-region EKS with automated failover, reducing recovery time objective from 45 minutes to 90 seconds.",
+        "Introduced SLO-driven operations across 12 product teams, cutting p99 checkout latency by 63% and reducing Sev-1 incidents from 11 per quarter to 2 per quarter within nine months.",
+        "Built a platform engineering group of 18 engineers across four squads, defined career ladders, and mentored six senior engineers into staff-level roles.",
+        "Implemented OpenTelemetry tracing end to end, replacing three overlapping monitoring vendors and saving approximately $410,000 per year while improving incident diagnosis time by 48%.",
+        "Led chaos-engineering programme covering payment authorisation, settlement, refunds, and reconciliation paths, surfacing 37 latent failure modes before they reached production.",
+        "Partnered with security to achieve SOC 2 Type II and PCI-DSS 4.0 readiness, automating evidence collection and reducing audit preparation from six weeks to five days.",
+        "Rebuilt disaster-recovery runbooks and ran quarterly game days with executive participation, improving cross-functional incident response confidence scores from 2.9 to 4.6 out of 5.",
+        "Introduced progressive delivery with Argo Rollouts and automated canary analysis, reducing change-failure rate from 18% to 4.1% across 2,300 annual deployments.",
+        "Drove a FinOps programme that right-sized 1,900 workloads, purchased savings plans intelligently, and reduced cloud spend by 31% year over year without sacrificing reliability.",
+        "Authored the platform's technical vision and three-year roadmap, secured executive funding, and aligned architecture decisions with product, data, and security leadership.",
+        "Special-character stress bullet: R&D budget < $2.5M & rising > 20% — “quotes”, apostrophes, slashes // backslashes \\, hash #tag, percent 100%, at @handle.",
+        "Unicode stress bullet: José Müller from Zürich said “naïve façade” — 東京 team, مرحبا بالعالم, and emoji 🚀 ✅ 📈 must survive every export format intact."
+      ]
+    },
+    {
+      "id": "exp-max-2",
+      "role": "Senior Site Reliability Engineer",
+      "company": "Helix Health Systems",
+      "location": "Bengaluru, India",
+      "employmentType": "Full-time",
+      "startDate": "Mar 2016",
+      "endDate": "Dec 2020",
+      "summary": "Operated regulated clinical workloads with 99.99% availability targets and strict HIPAA controls while the company grew from 40 to 400 engineers.",
+      "bullets": [
+        "Automated infrastructure provisioning with Terraform modules and policy-as-code guardrails, reducing environment build time from three days to under 40 minutes.",
+        "Led the incident-response rotation and blameless postmortem programme, cutting mean time to detect from 14 minutes to 3 minutes.",
+        "Migrated 60 TB of PostgreSQL data to a partitioned, read-replica topology with zero recorded data loss and a 27-minute maintenance window.",
+        "Introduced load testing and capacity models that predicted Black Friday traffic within 6% of actual peak.",
+        "Mentored eight engineers on production readiness reviews and on-call best practices."
+      ]
+    },
+    {
+      "id": "exp-max-3",
+      "role": "Software Engineer II",
+      "company": "Meridian Logistics",
+      "location": "Coimbatore, India",
+      "employmentType": "Contract",
+      "startDate": "Jul 2012",
+      "endDate": "Feb 2016",
+      "summary": "",
+      "bullets": [
+        "Built route-optimisation services in Go that reduced average delivery distance by 12% across 6,000 daily routes.",
+        "Replaced a brittle cron-based ETL pipeline with Kafka Streams, cutting reconciliation failures by 90%.",
+        "Wrote the first automated integration test suite for the dispatch API, raising coverage from 8% to 71%."
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "id": "proj-max-1",
+      "name": "Orbit — Multi-Region Service Mesh Control Plane",
+      "role": "Creator & Maintainer",
+      "link": "https://orbit-mesh.dev/docs/getting-started/installation/kubernetes/multi-region/failover",
+      "github": "https://github.com/aaravkrishnan-qa-max-coverage/orbit-multi-region-service-mesh-control-plane",
+      "techStack": "Go, Kubernetes, Envoy, gRPC, OpenTelemetry, Terraform",
+      "description": "An opinionated control plane that configures Envoy sidecars, mTLS, retries, and cross-region failover from a single declarative manifest. Used in production by three fintech companies handling regulated payment traffic. Designed for teams that want service-mesh benefits without operating a full Istio installation.",
+      "highlights": [
+        "Handles 120,000 requests per second per region with sub-millisecond added proxy latency at p99.",
+        "Automates certificate rotation, circuit breaking, and retry budgets with safe defaults and explicit escape hatches.",
+        "Ships a local development mode that reproduces multi-region topology on a laptop using Docker Compose.",
+        "Includes a compatibility test suite covering 14 Kubernetes versions and three cloud load-balancer implementations.",
+        "Project highlight with a very long unbroken URL token to test wrapping: https://example.com/this/is/an/extremely/long/path/that/should/wrap/instead/of/overflowing/the/content/column/even-on/narrow/templates?query=abcdefghijklmnopqrstuvwxyz0123456789&another=ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+        "Unicode highlight: 東京・大阪 deployment validated with مهندس and emoji 🛰️ ✅ — accents: São Paulo, Montréal, Kraków."
+      ]
+    },
+    {
+      "id": "proj-max-2",
+      "name": "Ledger Lens",
+      "role": "Technical Lead",
+      "link": "https://ledgerlens.example.com",
+      "github": "https://github.com/aaravkrishnan-qa-max-coverage/ledger-lens",
+      "techStack": "React, TypeScript, PostgreSQL, Python",
+      "description": "A reconciliation dashboard that explains every cent of variance between payment processor reports and internal ledgers, with drill-downs, audit trails, and role-based access.",
+      "highlights": [
+        "Reduced manual reconciliation effort from 26 analyst-hours per week to 3.",
+        "Processes 9 million ledger entries per day with incremental materialised views.",
+        "Zero-downtime schema migrations using expand/contract patterns."
+      ]
+    },
+    {
+      "id": "proj-max-3",
+      "name": "Quiet Hours",
+      "role": "Contributor",
+      "link": "",
+      "github": "",
+      "techStack": "Rust, SQLite",
+      "description": "A small CLI that schedules noisy background jobs outside business hours using calendar awareness and per-tenant quotas.",
+      "highlights": []
+    }
+  ],
+  "education": [
+    {
+      "id": "edu-max-1",
+      "institution": "Indian Institute of Technology Madras",
+      "degree": "Master of Technology",
+      "field": "Computer Science and Engineering",
+      "grade": "9.1 / 10 CGPA",
+      "startDate": "2010",
+      "endDate": "2012",
+      "details": "Thesis: Adaptive Load Shedding for Multi-Tenant Payment APIs. Teaching assistant for Distributed Systems (two semesters). Awarded institute merit scholarship."
+    },
+    {
+      "id": "edu-max-2",
+      "institution": "PSG College of Technology",
+      "degree": "Bachelor of Engineering",
+      "field": "Information Technology",
+      "grade": "8.7 / 10 CGPA",
+      "startDate": "2006",
+      "endDate": "2010",
+      "details": "Graduated first class with distinction. Led the ACM student chapter and organised two national-level hackathons."
+    },
+    {
+      "id": "edu-max-3",
+      "institution": "National Institute of Technology, Tiruchirappalli",
+      "degree": "Certificate Programme",
+      "field": "Cloud Architecture",
+      "grade": "",
+      "startDate": "2018",
+      "endDate": "2018",
+      "details": ""
+    }
+  ],
+  "certifications": [
+    {
+      "id": "cert-max-1",
+      "name": "Certified Kubernetes Administrator (CKA)",
+      "issuer": "Cloud Native Computing Foundation",
+      "year": "2023",
+      "credentialUrl": "https://www.credly.com/badges/11111111-2222-3333-4444-555555555555/public_url"
+    },
+    {
+      "id": "cert-max-2",
+      "name": "AWS Certified Solutions Architect — Professional",
+      "issuer": "Amazon Web Services",
+      "year": "2022",
+      "credentialUrl": "https://aws.amazon.com/verification"
+    },
+    {
+      "id": "cert-max-3",
+      "name": "HashiCorp Certified: Terraform Associate",
+      "issuer": "HashiCorp",
+      "year": "2021",
+      "credentialUrl": ""
+    }
+  ],
+  "achievements": [
+    "Reduced company-wide cloud spend by 31% ($1.8M annualised) while improving availability from 99.95% to 99.99%.",
+    "Winner, National Reliability Engineering Challenge 2022 — built an automated failover demo in under six hours.",
+    "Speaker at KubeCon India 2023: “SLOs That Product Teams Actually Use”.",
+    "Patent pending: “Adaptive Request Throttling for Multi-Tenant Payment Processing” (IN 2024/012345).",
+    "Published internal engineering handbook on incident command, adopted by 12 teams and 180 engineers.",
+    "Achievement with special characters: raised NPS from 41 to 68 & cut churn < 2% / quarter — “customer-first” @scale #reliability 100%."
+  ],
+  "languages": [
+    "English (Native / Bilingual)",
+    "Tamil (Native)",
+    "Hindi (Professional working proficiency)",
+    "French (Limited working proficiency — DELF B1)",
+    "Japanese (Elementary — JLPT N5)"
+  ],
+  "customSections": {
+    "interests": {
+      "mode": "text",
+      "text": "Long-distance cycling (completed the 1,200 km Paris–Brest–Paris randonnée), classical Carnatic music, and building mechanical keyboards. Also enjoy mentoring first-generation engineering students and writing about reliability engineering."
+    },
+    "awards": {
+      "mode": "bullets",
+      "items": [
+        "Northstar Financial Technologies CEO Award for Operational Excellence, 2023.",
+        "Helix Health Systems Engineering Impact Award, 2019.",
+        "IIT Madras Institute Merit Scholarship, 2010–2012."
+      ]
+    },
+    "references": {
+      "mode": "entries",
+      "entries": [
+        {
+          "title": "Priya Venkatesan",
+          "subtitle": "VP Engineering, Northstar Financial Technologies",
+          "date": "2021 – Present",
+          "location": "Chennai, India",
+          "bullets": [
+            "Direct manager for four years; can speak to platform strategy, team building, and executive communication.",
+            "Contact: priya.venkatesan@example.com · +91 90000 11111"
+          ]
+        },
+        {
+          "title": "Daniel Okafor",
+          "subtitle": "Director of Site Reliability, Helix Health Systems",
+          "date": "2016 – 2020",
+          "location": "Bengaluru, India",
+          "bullets": [
+            "Managed the SRE organisation during the HIPAA expansion; can discuss regulated operations and incident response."
+          ]
+        }
+      ]
+    },
+    "volunteer": {
+      "mode": "entries",
+      "entries": [
+        {
+          "title": "Volunteer Mentor",
+          "subtitle": "Pragati Foundation — first-generation engineering students",
+          "date": "2019 – Present",
+          "location": "Remote / Chennai",
+          "bullets": [
+            "Mentor six students per year on interview preparation, systems fundamentals, and career planning.",
+            "Ran a 12-week distributed-systems reading group with 40 participants."
+          ]
+        }
+      ]
+    },
+    "publications": {
+      "mode": "entries",
+      "entries": [
+        {
+          "title": "SLOs That Product Teams Actually Use",
+          "subtitle": "KubeCon India 2023 — conference talk and accompanying article",
+          "date": "2023",
+          "location": "Hyderabad, India",
+          "bullets": [
+            "Presented a practical framework for translating user journeys into error budgets without drowning teams in dashboards."
+          ]
+        },
+        {
+          "title": "Adaptive Load Shedding for Multi-Tenant Payment APIs",
+          "subtitle": "M.Tech thesis, IIT Madras",
+          "date": "2012",
+          "location": "Chennai, India",
+          "bullets": []
+        }
+      ]
+    },
+    "custom-grid": {
+      "mode": "grid",
+      "columns": [
+        { "label": "Cloud", "items": ["AWS", "GCP", "Azure"] },
+        { "label": "Languages", "items": ["Go", "Rust", "Python", "TypeScript"] },
+        { "label": "Data", "items": ["PostgreSQL", "Kafka", "Redis", "ClickHouse"] },
+        { "label": "Observability", "items": ["OpenTelemetry", "Prometheus", "Grafana", "Loki"] },
+        { "label": "Practices", "items": ["SRE", "FinOps", "Chaos engineering", "Platform strategy"] }
+      ]
+    },
+    "custom-entries": {
+      "mode": "entries",
+      "entries": [
+        {
+          "title": "Visiting Lecturer — Distributed Systems",
+          "subtitle": "IIT Madras, Department of Computer Science",
+          "date": "2022 – 2024",
+          "location": "Chennai, India",
+          "bullets": [
+            "Designed and taught a 14-week elective on operating distributed systems in production.",
+            "Rated 4.8 / 5 across two cohorts of 90 students; introduced a live incident-simulation lab."
+          ]
+        },
+        {
+          "title": "Advisory Board Member",
+          "subtitle": "Chennai Open Source Collective",
+          "date": "2021 – Present",
+          "location": "Chennai, India",
+          "bullets": [
+            "Advise on community governance, sponsorship, and technical programme design."
+          ]
+        }
+      ]
+    },
+    "custom-bullets": {
+      "mode": "bullets",
+      "items": [
+        "Organiser of the Chennai Reliability Meetup, a monthly gathering of 120+ engineers.",
+        "Reviewed 40+ conference talk proposals for KubeCon and PyCon India.",
+        "Maintainer of two open-source observability utilities with a combined 3,400 GitHub stars."
+      ]
+    },
+    "custom-text": {
+      "mode": "text",
+      "text": "I believe reliability is a product feature, not a tax. The best platforms make the safe path the easy path: sensible defaults, clear guardrails, fast feedback, and incident reviews that focus on systems rather than individuals. I optimise for teams that can operate what they build and for architectures that fail in predictable, recoverable ways. This custom paragraph is intentionally long so that the text mode is exercised end to end, including wrapping, punctuation — em dashes, semicolons; and “smart quotes” — plus Unicode: Zürich, 東京, مرحبا, 🚀."
+    }
+  },
+  "sectionsConfig": [
+    { "id": "basics", "type": "standard", "key": "basics", "label": "Personal Info", "visible": true, "order": 0 },
+    { "id": "summary", "type": "standard", "key": "summary", "label": "Executive Profile", "visible": true, "order": 1 },
+    { "id": "skills", "type": "standard", "key": "skills", "label": "Technical Skills", "visible": true, "order": 2 },
+    { "id": "experience", "type": "standard", "key": "experience", "label": "Professional Experience", "visible": true, "order": 3 },
+    { "id": "projects", "type": "standard", "key": "projects", "label": "Selected Projects", "visible": true, "order": 4 },
+    { "id": "education", "type": "standard", "key": "education", "label": "Education & Training", "visible": true, "order": 5 },
+    { "id": "certifications", "type": "standard", "key": "certifications", "label": "Certifications & Credentials", "visible": true, "order": 6 },
+    { "id": "achievements", "type": "standard", "key": "achievements", "label": "Awards & Achievements", "visible": true, "order": 7 },
+    { "id": "languages", "type": "standard", "key": "languages", "label": "Languages", "visible": true, "order": 8 },
+    { "id": "interests", "type": "standard", "key": "interests", "label": "Interests", "visible": true, "order": 9 },
+    { "id": "awards", "type": "standard", "key": "awards", "label": "Honours", "visible": true, "order": 10 },
+    { "id": "references", "type": "standard", "key": "references", "label": "References", "visible": true, "order": 11 },
+    { "id": "volunteer", "type": "standard", "key": "volunteer", "label": "Volunteering", "visible": true, "order": 12 },
+    { "id": "publications", "type": "standard", "key": "publications", "label": "Publications & Talks", "visible": true, "order": 13 },
+    { "id": "custom-grid", "type": "custom", "label": "Technical Toolkit", "visible": true, "order": 14 },
+    { "id": "custom-entries", "type": "custom", "label": "Teaching & Advisory", "visible": true, "order": 15 },
+    { "id": "custom-bullets", "type": "custom", "label": "Community Involvement", "visible": true, "order": 16 },
+    { "id": "custom-text", "type": "custom", "label": "Career Philosophy", "visible": true, "order": 17 }
+  ]
+}

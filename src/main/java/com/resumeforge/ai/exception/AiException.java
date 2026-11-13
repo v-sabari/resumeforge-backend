@@ -30,6 +30,8 @@ public class AiException extends RuntimeException {
         OPENROUTER_UNAVAILABLE,
         /** OpenRouter returned a 2xx body but the content was null or empty */
         OPENROUTER_EMPTY_RESPONSE,
+        /** AI is not configured on this deployment (missing/blank API key) */
+        AI_NOT_CONFIGURED,
         /** Any other unexpected failure */
         AI_SERVICE_ERROR,
     }
