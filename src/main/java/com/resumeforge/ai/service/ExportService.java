@@ -17,6 +17,10 @@ import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDType0Font;
 import org.apache.poi.xwpf.usermodel.*;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPageMar;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPPr;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTabStop;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTabs;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.STTabJc;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTSectPr;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -101,8 +105,8 @@ public class ExportService {
     private String renderServiceInternalSecret;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(5))
-            .build();
+        .connectTimeout(Duration.ofSeconds(5))
+        .build();
 
     /* ================================================================
        PUBLIC API — access / history (unchanged)
@@ -113,11 +117,11 @@ public class ExportService {
         boolean ok = user.isPremium() || used < 3;
         long limit = user.isPremium() ? 999 : 3;
         return ExportStatusResponse.builder()
-                .canExport(ok)
-                .reason(ok ? "OK" : "Daily limit reached. Upgrade to premium for unlimited exports.")
-                .exportsToday(used).exportLimit(limit)
-                .remainingFreeExports(user.isPremium() ? 999 : Math.max(0, limit - used))
-                .build();
+            .canExport(ok)
+            .reason(ok ? "OK" : "Daily limit reached. Upgrade to premium for unlimited exports.")
+            .exportsToday(used).exportLimit(limit)
+            .remainingFreeExports(user.isPremium() ? 999 : Math.max(0, limit - used))
+            .build();
     }
 
     @Transactional
@@ -126,15 +130,15 @@ public class ExportService {
         boolean ok = user.isPremium() || used < 3;
         long limit = user.isPremium() ? 999 : 3;
         if (!ok) return ExportStatusResponse.builder().canExport(false)
-                .reason("Daily limit reached. Upgrade to premium for unlimited exports.")
-                .exportsToday(used).exportLimit(limit).remainingFreeExports(0).build();
+            .reason("Daily limit reached. Upgrade to premium for unlimited exports.")
+            .exportsToday(used).exportLimit(limit).remainingFreeExports(0).build();
         Resume r = load(user, resumeId);
         exportHistoryRepository.save(ExportHistory.builder()
-                .userId(user.getId()).resumeId(r.getId()).exportFormat(format.toUpperCase()).build());
+            .userId(user.getId()).resumeId(r.getId()).exportFormat(format.toUpperCase()).build());
         return ExportStatusResponse.builder().canExport(true).reason("OK")
-                .exportsToday(used + 1).exportLimit(limit)
-                .remainingFreeExports(user.isPremium() ? 999 : Math.max(0, limit - used - 1))
-                .build();
+            .exportsToday(used + 1).exportLimit(limit)
+            .remainingFreeExports(user.isPremium() ? 999 : Math.max(0, limit - used - 1))
+            .build();
     }
 
     // SEC/BUS FIX (EXPORT-02): a free user could bypass the free daily export
@@ -163,18 +167,18 @@ public class ExportService {
     private void checkAndRecordDownload(User user, Long resumeId, String format) {
         if (!checkAndRecordExport(user, resumeId, format).isCanExport()) {
             throw new RateLimitException(
-                    "Free export limit reached (3 per day). Upgrade to premium for unlimited exports.");
+                "Free export limit reached (3 per day). Upgrade to premium for unlimited exports.");
         }
     }
 
     public List<ExportHistoryResponse> getExportHistory(User user) {
         return exportHistoryRepository.findByUserIdOrderByCreatedAtDesc(user.getId())
-                .stream().map(this::toHistoryResponse).collect(Collectors.toList());
+            .stream().map(this::toHistoryResponse).collect(Collectors.toList());
     }
 
     public String safeFilename(User user, Long resumeId) {
         return resumeRepository.findByIdAndUserId(resumeId, user.getId())
-                .map(r -> sanitizeFilename(r.getTitle())).orElse("resume");
+            .map(r -> sanitizeFilename(r.getTitle())).orElse("resume");
     }
 
     /* ================================================================
@@ -193,16 +197,16 @@ public class ExportService {
             // base URL — the old "/render/pdf" suffix has been removed since
             // the new Vercel function route is already the complete path.
             HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create(renderServiceUrl))
-                    .timeout(Duration.ofSeconds(renderServiceTimeoutSeconds))
-                    .header("Content-Type", "application/json")
-                    .header("X-Internal-Secret", renderServiceInternalSecret)
-                    .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
-                    .build();
+                .uri(URI.create(renderServiceUrl))
+                .timeout(Duration.ofSeconds(renderServiceTimeoutSeconds))
+                .header("Content-Type", "application/json")
+                .header("X-Internal-Secret", renderServiceInternalSecret)
+                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                .build();
             HttpResponse<byte[]> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofByteArray());
             if (resp.statusCode() != 200) {
                 throw new RuntimeException("Render service returned HTTP " + resp.statusCode()
-                        + ": " + new String(resp.body(), StandardCharsets.UTF_8));
+                    + ": " + new String(resp.body(), StandardCharsets.UTF_8));
             }
             return resp.body();
         } catch (ResourceNotFoundException e) {
@@ -474,9 +478,17 @@ public class ExportService {
         Resume resume = load(user, resumeId);
         try (XWPFDocument doc = new XWPFDocument()) {
             CTSectPr sp = doc.getDocument().getBody().addNewSectPr();
+            // Explicit page size (twips) so right-aligned tab stops land exactly on the
+            // right margin. Mirrors the frontend: Academic = US Letter, everything else = A4.
+            boolean letter = "academic".equalsIgnoreCase(resume.getTemplate());
+            int pageW = letter ? 12240 : 11906;
+            int pageH = letter ? 15840 : 16838;
+            sp.addNewPgSz().setW(BigInteger.valueOf(pageW));
+            sp.getPgSz().setH(BigInteger.valueOf(pageH));
             CTPageMar pm = sp.addNewPgMar();
             pm.setLeft(BigInteger.valueOf(1080)); pm.setRight(BigInteger.valueOf(1080));
             pm.setTop(BigInteger.valueOf(1080));  pm.setBottom(BigInteger.valueOf(1080));
+            final int textW = pageW - 2 * 1080;   // usable text width in twips
 
             /* ── Header ─────────────────────────────────────────── */
             JsonNode pi = parseObj(resume.getPersonalInfo());
@@ -506,7 +518,7 @@ public class ExportService {
                     case "experience":
                         docxExperience(doc, label, parseArr(resume.getExperience())); break;
                     case "projects":
-                        docxProjects(doc, label, parseArr(resume.getProjects())); break;
+                        docxProjects(doc, label, parseArr(resume.getProjects()), textW); break;
                     case "education":
                         docxEducation(doc, label, parseArr(resume.getEducation())); break;
                     case "skills":
@@ -548,15 +560,17 @@ public class ExportService {
         }
     }
 
-    private void docxProjects(XWPFDocument doc, String label, JsonNode arr) {
+    private void docxProjects(XWPFDocument doc, String label, JsonNode arr, int textW) {
         if (!arr.isArray()||arr.size()==0) return;
         dHeading(doc, hl(label,"PROJECTS"));
         for (JsonNode p : arr) {
             String name=t(p,"name"),role=t(p,"role");
-            String head=role.isBlank()?name:name+"("+role+")";
-            if (!head.isBlank()) dBold(doc,head);
-            if (!t(p,"techStack").isBlank()) dMeta(doc,"Tech: "+t(p,"techStack"));
-            List<String> urls=parts(t(p,"link"),t(p,"github")); if(!urls.isEmpty()) dMeta(doc,join(urls,"  ·  "));
+            String head=role.isBlank()?name:name+" ("+role+")";
+            // Row 1: project name (left) ........ GitHub link (right-aligned)
+            if (!head.isBlank()) dTabbedRow(doc, textW, head, true, false, 11, t(p,"github"));
+            // Row 2: "Tech Stack: ..." (left) ........ Live link (right-aligned)
+            String tech = techStackLine(t(p,"techStack"));
+            if (!tech.isBlank() || !t(p,"link").isBlank()) dTabbedRow(doc, textW, tech, false, true, 9, t(p,"link"));
             if (!t(p,"description").isBlank()) dBody(doc,t(p,"description"));
             for (JsonNode h : p.path("highlights")) { String hl=h.asString(""); if(!hl.isBlank()) dBullet(doc,hl); }
             dSpacer(doc);
@@ -769,21 +783,21 @@ public class ExportService {
        ================================================================ */
 
     private static final String DEFAULT_ORDER =
-            "[{\"type\":\"standard\",\"key\":\"basics\",\"id\":\"basics\",\"label\":\"Personal Info\",\"visible\":true}," +
-                    "{\"type\":\"standard\",\"key\":\"summary\",\"id\":\"summary\",\"label\":\"Summary\",\"visible\":true}," +
-                    "{\"type\":\"standard\",\"key\":\"skills\",\"id\":\"skills\",\"label\":\"Skills\",\"visible\":true}," +
-                    "{\"type\":\"standard\",\"key\":\"experience\",\"id\":\"experience\",\"label\":\"Experience\",\"visible\":true}," +
-                    "{\"type\":\"standard\",\"key\":\"projects\",\"id\":\"projects\",\"label\":\"Projects\",\"visible\":true}," +
-                    "{\"type\":\"standard\",\"key\":\"education\",\"id\":\"education\",\"label\":\"Education\",\"visible\":true}," +
-                    "{\"type\":\"standard\",\"key\":\"certifications\",\"id\":\"certifications\",\"label\":\"Certifications\",\"visible\":true}," +
-                    "{\"type\":\"standard\",\"key\":\"achievements\",\"id\":\"achievements\",\"label\":\"Achievements\",\"visible\":true}," +
-                    "{\"type\":\"standard\",\"key\":\"languages\",\"id\":\"languages\",\"label\":\"Languages\",\"visible\":true}]";
+        "[{\"type\":\"standard\",\"key\":\"basics\",\"id\":\"basics\",\"label\":\"Personal Info\",\"visible\":true}," +
+            "{\"type\":\"standard\",\"key\":\"summary\",\"id\":\"summary\",\"label\":\"Summary\",\"visible\":true}," +
+            "{\"type\":\"standard\",\"key\":\"skills\",\"id\":\"skills\",\"label\":\"Skills\",\"visible\":true}," +
+            "{\"type\":\"standard\",\"key\":\"experience\",\"id\":\"experience\",\"label\":\"Experience\",\"visible\":true}," +
+            "{\"type\":\"standard\",\"key\":\"projects\",\"id\":\"projects\",\"label\":\"Projects\",\"visible\":true}," +
+            "{\"type\":\"standard\",\"key\":\"education\",\"id\":\"education\",\"label\":\"Education\",\"visible\":true}," +
+            "{\"type\":\"standard\",\"key\":\"certifications\",\"id\":\"certifications\",\"label\":\"Certifications\",\"visible\":true}," +
+            "{\"type\":\"standard\",\"key\":\"achievements\",\"id\":\"achievements\",\"label\":\"Achievements\",\"visible\":true}," +
+            "{\"type\":\"standard\",\"key\":\"languages\",\"id\":\"languages\",\"label\":\"Languages\",\"visible\":true}]";
 
     private List<JsonNode> orderedVisible(String sectionsConfigJson) {
         JsonNode arr = parseArr(sectionsConfigJson==null||sectionsConfigJson.isBlank() ? DEFAULT_ORDER : sectionsConfigJson);
         return StreamSupport.stream(arr.spliterator(), false)
-                .filter(s -> s.path("visible").asBoolean(true))
-                .collect(Collectors.toList());
+            .filter(s -> s.path("visible").asBoolean(true))
+            .collect(Collectors.toList());
     }
 
     /* ================================================================
@@ -933,8 +947,8 @@ public class ExportService {
         private String san(String text, PDType0Font font) {
             if(text==null||text.isEmpty()) return "";
             String n=text.replace('\u2013','-').replace('\u2014','-').replace('\u2018','\'')
-                    .replace('\u2019','\'').replace('\u201c','"').replace('\u201d','"')
-                    .replace('\u2026',' ').replace('\u00a0',' ').replace('\u2022','-');
+                .replace('\u2019','\'').replace('\u201c','"').replace('\u201d','"')
+                .replace('\u2026',' ').replace('\u00a0',' ').replace('\u2022','-');
             StringBuilder sb=new StringBuilder(n.length());
             for (int i=0;i<n.length();) {
                 int cp=n.codePointAt(i);
@@ -962,6 +976,54 @@ public class ExportService {
     private void dBold(XWPFDocument d, String t)    { if(t==null||t.isBlank()) return; XWPFParagraph p=d.createParagraph(); p.setSpacingAfter(20); XWPFRun r=p.createRun(); r.setText(t); r.setBold(true); r.setFontSize(11); }
     private void dBody(XWPFDocument d, String t)    { if(t==null||t.isBlank()) return; XWPFParagraph p=d.createParagraph(); p.setSpacingAfter(60); XWPFRun r=p.createRun(); r.setText(t); r.setFontSize(10); }
     private void dBullet(XWPFDocument d, String t)  { if(t==null||t.isBlank()) return; XWPFParagraph p=d.createParagraph(); p.setIndentationLeft(260); p.setSpacingAfter(20); XWPFRun r=p.createRun(); r.setText("•  "+t); r.setFontSize(10); }
+    /** "Tech Stack: A, B" — label added once, even if the user already typed it. */
+    private String techStackLine(String tech) {
+        String v = tech == null ? "" : tech.trim().replaceFirst("(?i)^tech(nology)?\\s*stack\\s*:\\s*", "");
+        return v.isBlank() ? "" : "Tech Stack: " + v;
+    }
+
+    /** Display form of a URL: no protocol, no "www.", no trailing slash. */
+    private String shortUrl(String u) {
+        return u == null ? "" : u.trim().replaceFirst("(?i)^https?://", "").replaceFirst("(?i)^www\\.", "").replaceAll("/+$", "");
+    }
+
+    private String hrefOf(String u) {
+        String v = u == null ? "" : u.trim();
+        return v.matches("(?i)^https?://.*") ? v : "https://" + v;
+    }
+
+    /** Adds a right-aligned tab stop at {@code pos} twips (measured from the left margin). */
+    private void addRightTab(XWPFParagraph p, int pos) {
+        CTPPr ppr = p.getCTP().isSetPPr() ? p.getCTP().getPPr() : p.getCTP().addNewPPr();
+        CTTabs tabs = ppr.isSetTabs() ? ppr.getTabs() : ppr.addNewTabs();
+        CTTabStop ts = tabs.addNewTab();
+        ts.setVal(STTabJc.RIGHT);
+        ts.setPos(BigInteger.valueOf(pos));
+    }
+
+    /**
+     * One line with text on the left and a clickable link flush against the right margin
+     * (left text, TAB, link). If {@code left} is blank the link is still right-aligned.
+     */
+    private void dTabbedRow(XWPFDocument d, int textW, String left, boolean bold, boolean italic,
+                            int size, String url) {
+        boolean hasLink = url != null && !url.isBlank();
+        if ((left == null || left.isBlank()) && !hasLink) return;
+        XWPFParagraph p = d.createParagraph();
+        p.setSpacingAfter(20);
+        addRightTab(p, textW);
+        XWPFRun rl = p.createRun();
+        rl.setText(left == null ? "" : left);
+        rl.setBold(bold); rl.setItalic(italic); rl.setFontSize(size);
+        if (hasLink) {
+            XWPFRun tab = p.createRun();
+            tab.addTab();
+            XWPFHyperlinkRun hr = p.createHyperlinkRun(hrefOf(url));
+            hr.setText(shortUrl(url));
+            hr.setFontSize(9); hr.setItalic(italic); hr.setColor("222222");
+        }
+    }
+
     private void dSpacer(XWPFDocument d)             { d.createParagraph().setSpacingAfter(40); }
     private void dTwoCol(XWPFDocument d, String l, String r) {
         if(l==null||l.isBlank()) return;
@@ -982,7 +1044,7 @@ public class ExportService {
 
     private Resume load(User user, Long id) {
         return resumeRepository.findByIdAndUserId(id, user.getId())
-                .orElseThrow(() -> new ResourceNotFoundException("Resume not found"));
+            .orElseThrow(() -> new ResourceNotFoundException("Resume not found"));
     }
 
     private long countRecent(User user) {
@@ -997,6 +1059,6 @@ public class ExportService {
 
     private ExportHistoryResponse toHistoryResponse(ExportHistory e) {
         return ExportHistoryResponse.builder().id(e.getId()).resumeId(e.getResumeId())
-                .exportFormat(e.getExportFormat()).createdAt(e.getCreatedAt()).build();
+            .exportFormat(e.getExportFormat()).createdAt(e.getCreatedAt()).build();
     }
 }
