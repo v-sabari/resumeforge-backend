@@ -1041,7 +1041,20 @@ public class ExportService {
     private void dMeta(XWPFDocument d, String t)    { if(t==null||t.isBlank()) return; XWPFParagraph p=d.createParagraph(); p.setSpacingAfter(20); XWPFRun r=p.createRun(); r.setText(t); r.setFontSize(9); r.setColor("666666"); }
     private void dHeading(XWPFDocument d, String t) { XWPFParagraph p=d.createParagraph(); p.setSpacingBefore(220); p.setSpacingAfter(80); p.setBorderBottom(Borders.SINGLE); XWPFRun r=p.createRun(); r.setText(t); r.setBold(true); r.setFontSize(12); }
     private void dBold(XWPFDocument d, String t)    { if(t==null||t.isBlank()) return; XWPFParagraph p=d.createParagraph(); p.setSpacingAfter(20); XWPFRun r=p.createRun(); r.setText(t); r.setBold(true); r.setFontSize(11); }
-    private void dBody(XWPFDocument d, String t)    { if(t==null||t.isBlank()) return; XWPFParagraph p=d.createParagraph(); p.setSpacingAfter(60); XWPFRun r=p.createRun(); r.setText(t); r.setFontSize(10); }
+    private void dBody(XWPFDocument d, String t)    {
+        if(t==null||t.isBlank()) return;
+        XWPFParagraph p=d.createParagraph(); p.setSpacingAfter(60);
+        // Preserve author-entered paragraph breaks: one run per line, with a
+        // hard line break between lines, so a multi-paragraph summary/description
+        // survives the round-trip instead of collapsing into one block.
+        String[] lines=t.split("\n", -1);
+        for(int i=0;i<lines.length;i++){
+            XWPFRun r=p.createRun();
+            if(i>0) r.addBreak();
+            r.setText(lines[i]);
+            r.setFontSize(10);
+        }
+    }
     private void dBullet(XWPFDocument d, String t)  { if(t==null||t.isBlank()) return; XWPFParagraph p=d.createParagraph(); p.setIndentationLeft(260); p.setSpacingAfter(20); XWPFRun r=p.createRun(); r.setText("•  "+t); r.setFontSize(10); }
 
     /**
