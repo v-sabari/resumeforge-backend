@@ -60,7 +60,8 @@ public class ResumeRequest {
     )
     private String fontFamily;
 
+    // Upper bound widened 13.0 -> 16.0 by V28__widen_font_size_range.sql.
     @DecimalMin(value = "8.0", message = "fontSize must be at least 8.0")
-    @DecimalMax(value = "13.0", message = "fontSize must not exceed 13.0")
+    @DecimalMax(value = "16.0", message = "fontSize must not exceed 16.0")
     private Double fontSize;
 }

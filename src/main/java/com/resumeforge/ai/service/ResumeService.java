@@ -281,7 +281,9 @@ public class ResumeService {
     }
 
     private static final double FONT_SIZE_FLOOR = 8.0;
-    private static final double FONT_SIZE_CEILING = 13.0;
+    // Widened 13.0 -> 16.0 by V28__widen_font_size_range.sql. Keep in sync with
+    // ResumeRequest.@DecimalMax, Resume.prePersist/preUpdate and the DB CHECK.
+    private static final double FONT_SIZE_CEILING = 16.0;
     private Double sanitizeFontSize(Double value) {
         if (value == null || value.isNaN() || value < FONT_SIZE_FLOOR || value > FONT_SIZE_CEILING) {
             return DEFAULT_FONT_SIZE;

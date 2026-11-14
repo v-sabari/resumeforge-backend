@@ -105,9 +105,10 @@ public class Resume {
     @Builder.Default
     private String fontFamily = "template";
 
-    // Base body-text size in px (8.0–13.0). 10.5 is the size every template is
-    // designed around. The frontend converts it to a scoped zoom factor so the
-    // templates' absolute text-[Npx] classes scale uniformly.
+    // Base body-text size in px (8.0–16.0; widened from 13.0 by V28). 10.5 is
+    // the size every template is designed around. The frontend converts it to a
+    // scoped zoom factor so the templates' absolute text-[Npx] classes scale
+    // uniformly.
     @Column(name = "font_size", nullable = false)
     @Builder.Default
     private Double fontSize = 10.5;
@@ -128,7 +129,7 @@ public class Resume {
         if (template == null || template.isBlank()) template = "modern";
         if (layoutScale == null || layoutScale < 0.5 || layoutScale > 1.35) layoutScale = 1.0;
         if (fontFamily == null || fontFamily.isBlank()) fontFamily = "template";
-        if (fontSize == null || fontSize < 8.0 || fontSize > 13.0) fontSize = 10.5;
+        if (fontSize == null || fontSize < 8.0 || fontSize > 16.0) fontSize = 10.5;
     }
 
     @PreUpdate
@@ -137,6 +138,6 @@ public class Resume {
         if (template == null || template.isBlank()) template = "modern";
         if (layoutScale == null || layoutScale < 0.5 || layoutScale > 1.35) layoutScale = 1.0;
         if (fontFamily == null || fontFamily.isBlank()) fontFamily = "template";
-        if (fontSize == null || fontSize < 8.0 || fontSize > 13.0) fontSize = 10.5;
+        if (fontSize == null || fontSize < 8.0 || fontSize > 16.0) fontSize = 10.5;
     }
 }
