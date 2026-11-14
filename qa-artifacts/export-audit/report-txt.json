@@ -1,6 +1,6 @@
 {
   "format" : "TXT",
-  "generatedAt" : "2026-11-13T16:58:28.452569300Z",
+  "generatedAt" : "2026-11-14T12:33:15.837354400Z",
   "source" : "src/test/resources/qa/resume-max-coverage.json",
   "checks" : 213,
   "passed" : 213,
