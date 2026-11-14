@@ -1094,7 +1094,7 @@ public class ExportService {
 
     /** Body-size multiplier; 10.5 is the baseline the DOCX styles were built at. */
     private double docxSizeScale(Double fontSize) {
-        if (fontSize == null || fontSize.isNaN() || fontSize < 8.0 || fontSize > 13.0) return 1.0;
+        if (fontSize == null || fontSize.isNaN() || fontSize < 8.0 || fontSize > 16.0) return 1.0;
         return fontSize / FONT_SIZE;
     }
     /** "Tech Stack: A, B" — label added once, even if the user already typed it. */

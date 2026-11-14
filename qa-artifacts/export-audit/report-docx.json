@@ -1,6 +1,6 @@
 {
   "format" : "DOCX",
-  "generatedAt" : "2026-11-13T16:58:28.289372500Z",
+  "generatedAt" : "2026-11-14T12:33:15.670609100Z",
   "source" : "src/test/resources/qa/resume-max-coverage.json",
   "checks" : 213,
   "passed" : 213,
